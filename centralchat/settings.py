@@ -49,7 +49,8 @@ INSTALLED_APPS = [
     "storages",
     'common',
     'access',
-    'organizations'
+    'organizations',
+    'members'
 ]
 
 MIDDLEWARE = [
