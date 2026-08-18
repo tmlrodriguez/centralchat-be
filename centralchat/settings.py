@@ -47,7 +47,9 @@ INSTALLED_APPS = [
     "corsheaders",
     "channels",
     "storages",
-    'access'
+    'common',
+    'access',
+    'organizations'
 ]
 
 MIDDLEWARE = [
