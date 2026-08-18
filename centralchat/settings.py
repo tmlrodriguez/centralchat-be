@@ -27,10 +27,9 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', None)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', True)
-ALLOWED_HOSTS = list(os.environ.get('DJANGO_ALLOWED_HOSTS', None))
+ALLOWED_HOSTS = ['127.0.0.1']
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = ['http://localhost:5173']
-CSRF_TRUSTED_ORIGINS = ['http://localhost:5173']
 
 
 # Application definition
@@ -44,9 +43,11 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "rest_framework",
+    "rest_framework.authtoken",
     "corsheaders",
     "channels",
     "storages",
+    'access'
 ]
 
 MIDDLEWARE = [
@@ -111,6 +112,8 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+AUTH_USER_MODEL = "access.AccessUser"
 
 
 # Internationalization
