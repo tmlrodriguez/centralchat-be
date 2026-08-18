@@ -46,7 +46,7 @@ class Branch(TemporalMixin, LifeCycleMixin, AuthorMixin):
         - Branch codes must be unique within their company.
         - Branches should normally be deactivated instead of destructively deleted when historical records depend on them.
     """
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="branches")
+    company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="branches")
     name = models.CharField(max_length=150)
     code = models.CharField(max_length=50)
     description = models.TextField(blank=True)
@@ -82,8 +82,8 @@ class UserCompanyAccess(TemporalMixin, LifeCycleMixin, AuthorMixin):
         - Only one active access record may exist for the same user and company.
         - Revoked access records must remain preserved for historical traceability.
     """
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="company_accesses")
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="user_accesses")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, blank=False, null=False, on_delete=models.PROTECT, related_name="company_accesses")
+    company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="user_accesses")
     granted_at = models.DateTimeField(auto_now_add=True)
     revoked_at = models.DateTimeField(blank=True, null=True)
 
