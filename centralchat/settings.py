@@ -50,7 +50,8 @@ INSTALLED_APPS = [
     'common',
     'access',
     'organizations',
-    'members'
+    'members',
+    'whatsapp'
 ]
 
 MIDDLEWARE = [
