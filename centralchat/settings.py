@@ -65,7 +65,8 @@ INSTALLED_APPS = [
     'access',
     'organizations',
     'members',
-    'whatsapp'
+    'whatsapp',
+    'auditing'
 ]
 
 MIDDLEWARE = [
@@ -75,6 +76,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    "auditing.middleware.AuditRequestContextMiddleware",
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

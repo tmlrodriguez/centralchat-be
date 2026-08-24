@@ -1,6 +1,8 @@
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
 from django.utils import timezone
+from auditing.operations import schedule_audit_event
+from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
 from .meta_lifecycle import MetaLifecycleAPIError, MetaLifecycleClient, payload_contains_meta_id
 from .models import MetaIntegration, WhatsAppBusinessAccount, WhatsAppNumber
 from .webhook import normalize_phone_number
@@ -56,11 +58,13 @@ def validate_meta_integration_credentials(meta_integration, actor):
         Description:
         - Validate the configured Meta access token against Graph API.
         - Synchronize MetaIntegration connection lifecycle fields from the validation result.
+        - Record successful explicit Meta credential validation in the centralized audit subsystem.
 
         Notes:
         - is_connected becomes True only after successful Meta authentication.
         - Credentials remain stored exclusively through credential_reference.
-        - Failed validation marks the integration disconnected before propagating the validation failure when possible.
+        - Sensitive credential values are never copied into audit metadata.
+        - Successful audit events are persisted only after the surrounding transaction commits.
     """
 
     locked_integration = MetaIntegration.objects.select_for_update().select_related("company").get(id=meta_integration.id)
@@ -90,6 +94,22 @@ def validate_meta_integration_credentials(meta_integration, actor):
     locked_integration.updated_by = actor
     locked_integration.save(update_fields=["is_connected", "connected_at", "disconnected_at", "updated_by", "updated_at"])
 
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.META,
+        action=AUDIT_ACTION_REGISTRY.VALIDATE,
+        description="Credenciales de integración de Meta validadas correctamente.",
+        actor=actor,
+        company=locked_integration.company,
+        target=locked_integration,
+        metadata={
+            "meta_integration_id": locked_integration.id,
+            "meta_app_id": locked_integration.meta_app_id,
+            "is_connected": locked_integration.is_connected,
+            "meta_identity_id": str(identity.get("id") or ""),
+            "meta_identity_name": identity.get("name") or "",
+        },
+    )
+
     return {
         "meta_integration": locked_integration,
         "meta_identity": identity,
@@ -97,18 +117,21 @@ def validate_meta_integration_credentials(meta_integration, actor):
 
 
 @transaction.atomic
-def validate_whatsapp_number_connection(whatsapp_number, actor, client=None):
+def validate_whatsapp_number_connection(whatsapp_number, actor, client=None, audit_event=True):
     """
         DOCSTRING: Validate WhatsApp Number Connection
 
         Description:
         - Validate that a configured Meta Phone Number ID exists, is accessible, belongs to the expected WABA, and matches the configured corporate phone number.
         - Synchronize WhatsAppNumber.is_connected from actual Meta state.
+        - Record successful explicit number validation in the centralized audit subsystem.
 
         Notes:
         - Direct Phone Number ID access alone is insufficient.
         - Membership in the configured WABA is verified independently.
-        - Failed validation marks the local number disconnected.
+        - Failed validation marks the local number disconnected when the surrounding transaction semantics permit persistence.
+        - audit_event may be disabled when this operation is executed internally by a broader lifecycle operation.
+        - Sensitive Meta credentials are never copied into audit metadata.
     """
 
     locked_number = WhatsAppNumber.objects.select_for_update().select_related(
@@ -158,6 +181,27 @@ def validate_whatsapp_number_connection(whatsapp_number, actor, client=None):
     locked_number.updated_by = actor
     locked_number.save(update_fields=["is_connected", "updated_by", "updated_at"])
 
+    if audit_event:
+        schedule_audit_event(
+            category=AUDIT_CATEGORY_REGISTRY.META,
+            action=AUDIT_ACTION_REGISTRY.VALIDATE,
+            description="Número de WhatsApp validado correctamente contra Meta.",
+            actor=actor,
+            company=locked_number.company,
+            branch=locked_number.branch,
+            target=locked_number,
+            metadata={
+                "whatsapp_number_id": locked_number.id,
+                "whatsapp_business_account_id": account.id,
+                "meta_integration_id": integration.id,
+                "meta_waba_id": account.meta_waba_id,
+                "meta_phone_number_id": locked_number.meta_phone_number_id,
+                "is_connected": locked_number.is_connected,
+                "verified_name": meta_phone_data.get("verified_name") or "",
+                "code_verification_status": meta_phone_data.get("code_verification_status") or "",
+            },
+        )
+
     return {
         "whatsapp_number": locked_number,
         "meta_phone": meta_phone_data,
@@ -165,18 +209,21 @@ def validate_whatsapp_number_connection(whatsapp_number, actor, client=None):
 
 
 @transaction.atomic
-def refresh_whatsapp_business_account_state(whatsapp_business_account, actor):
+def refresh_whatsapp_business_account_state(whatsapp_business_account, actor, audit_event=True):
     """
         DOCSTRING: Refresh WhatsApp Business Account State
 
         Description:
         - Read the actual Meta state of a configured WABA without modifying the external subscription.
         - Synchronize WABA and associated phone-number connection flags.
+        - Record explicit lifecycle synchronization in the centralized audit subsystem.
 
         Notes:
         - is_connected reflects successful WABA access.
         - is_webhook_configured reflects whether the configured Meta app is actually subscribed to the WABA.
         - Every active CentralChat WhatsApp number belonging to the WABA is independently validated.
+        - Internal number validation does not generate individual audit events during a WABA refresh.
+        - audit_event may be disabled when this operation is executed as part of a broader connection workflow.
     """
 
     account = WhatsAppBusinessAccount.objects.select_for_update().select_related("company", "meta_integration").get(id=whatsapp_business_account.id)
@@ -240,6 +287,7 @@ def refresh_whatsapp_business_account_state(whatsapp_business_account, actor):
                 whatsapp_number=number,
                 actor=actor,
                 client=client,
+                audit_event=False,
             )
 
             number_results.append(
@@ -258,6 +306,26 @@ def refresh_whatsapp_business_account_state(whatsapp_business_account, actor):
                     "error": str(error),
                 }
             )
+
+    if audit_event:
+        schedule_audit_event(
+            category=AUDIT_CATEGORY_REGISTRY.META,
+            action=AUDIT_ACTION_REGISTRY.SYNCHRONIZE,
+            description="Estado de cuenta de WhatsApp Business sincronizado con Meta.",
+            actor=actor,
+            company=account.company,
+            target=account,
+            metadata={
+                "whatsapp_business_account_id": account.id,
+                "meta_integration_id": integration.id,
+                "meta_waba_id": account.meta_waba_id,
+                "is_connected": account.is_connected,
+                "is_webhook_configured": account.is_webhook_configured,
+                "validated_numbers": len(number_results),
+                "connected_numbers": len([result for result in number_results if result["connected"]]),
+                "disconnected_numbers": len([result for result in number_results if not result["connected"]]),
+            },
+        )
 
     return {
         "meta_integration": integration,
@@ -278,10 +346,13 @@ def connect_whatsapp_business_account(whatsapp_business_account, actor):
         - Subscribe the configured Meta app to the WABA.
         - Verify the resulting subscription.
         - Synchronize WABA and phone-number lifecycle state.
+        - Record the successful connection in the centralized audit subsystem.
 
         Notes:
         - is_webhook_configured becomes True only after Meta reports the app as subscribed.
         - A successful POST response alone is not trusted; the subscription is read back from Meta.
+        - Internal lifecycle synchronization does not generate a duplicate SYNCHRONIZE audit event.
+        - Internal phone-number validation does not generate duplicate VALIDATE audit events.
     """
 
     account = WhatsAppBusinessAccount.objects.select_for_update().select_related("company", "meta_integration").get(id=whatsapp_business_account.id)
@@ -302,10 +373,35 @@ def connect_whatsapp_business_account(whatsapp_business_account, actor):
     if not payload_contains_meta_id(subscribed_apps, integration.meta_app_id):
         raise ValidationError({"webhook": "Conexión de cuenta rechazada: Meta no confirmó la suscripción de la aplicación a la WABA."})
 
-    return refresh_whatsapp_business_account_state(
+    result = refresh_whatsapp_business_account_state(
         whatsapp_business_account=account,
         actor=actor,
+        audit_event=False,
     )
+
+    synchronized_account = result["whatsapp_business_account"]
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.META,
+        action=AUDIT_ACTION_REGISTRY.CONNECT,
+        description="Cuenta de WhatsApp Business conectada correctamente con Meta.",
+        actor=actor,
+        company=synchronized_account.company,
+        target=synchronized_account,
+        metadata={
+            "whatsapp_business_account_id": synchronized_account.id,
+            "meta_integration_id": integration.id,
+            "meta_app_id": integration.meta_app_id,
+            "meta_waba_id": synchronized_account.meta_waba_id,
+            "is_connected": synchronized_account.is_connected,
+            "is_webhook_configured": synchronized_account.is_webhook_configured,
+            "validated_numbers": len(result["numbers"]),
+            "connected_numbers": len([number for number in result["numbers"] if number["connected"]]),
+            "disconnected_numbers": len([number for number in result["numbers"] if not number["connected"]]),
+        },
+    )
+
+    return result
 
 
 @transaction.atomic
@@ -317,14 +413,17 @@ def disconnect_whatsapp_business_account(whatsapp_business_account, actor):
         - Remove the current application's WABA subscription from Meta.
         - Verify the actual subscription state after removal.
         - Synchronize local lifecycle fields.
+        - Record the successful disconnection in the centralized audit subsystem.
 
         Notes:
         - This operation modifies external Meta configuration.
         - Existing monitored conversation history remains preserved.
         - Monitoring should be disabled before disconnecting the WABA.
+        - Sensitive Meta credentials are never copied into audit metadata.
+        - Audit history is created only after the surrounding transaction commits successfully.
     """
 
-    account = WhatsAppBusinessAccount.objects.select_for_update().select_related("meta_integration").get(id=whatsapp_business_account.id)
+    account = WhatsAppBusinessAccount.objects.select_for_update().select_related("company", "meta_integration").get(id=whatsapp_business_account.id)
 
     if account.numbers.filter(is_active=True, is_monitoring_enabled=True).exists():
         raise ValidationError({"whatsapp_business_account": "Desconexión de cuenta rechazada: existen números con monitoreo activo."})
@@ -342,6 +441,8 @@ def disconnect_whatsapp_business_account(whatsapp_business_account, actor):
 
     now = timezone.now()
 
+    active_number_ids = list(account.numbers.filter(is_active=True).values_list("id", flat=True))
+
     account.is_connected = False
     account.is_webhook_configured = False
     account.disconnected_at = now
@@ -349,6 +450,25 @@ def disconnect_whatsapp_business_account(whatsapp_business_account, actor):
     account.save(update_fields=["is_connected", "is_webhook_configured", "disconnected_at", "updated_by", "updated_at"])
 
     account.numbers.filter(is_active=True).update(is_connected=False, updated_at=now)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.META,
+        action=AUDIT_ACTION_REGISTRY.DISCONNECT,
+        description="Cuenta de WhatsApp Business desconectada de Meta.",
+        actor=actor,
+        company=account.company,
+        target=account,
+        metadata={
+            "whatsapp_business_account_id": account.id,
+            "meta_integration_id": integration.id,
+            "meta_app_id": integration.meta_app_id,
+            "meta_waba_id": account.meta_waba_id,
+            "is_connected": account.is_connected,
+            "is_webhook_configured": account.is_webhook_configured,
+            "disconnected_at": account.disconnected_at.isoformat(),
+            "disconnected_number_ids": active_number_ids,
+        },
+    )
 
     return {
         "whatsapp_business_account": account,
