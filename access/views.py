@@ -4,9 +4,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST
 from rest_framework.views import APIView
-from .models import AccessUser
+from .operations import create_administrator, create_monitor
 from .permissions import IsAdministrator, IsSuperAdministrator
-from .registry import ROLE_REGISTRY
 from .serializers.business import AccessUserSerializer, LoginSerializer
 from .serializers.snapshots import AccessUserSnapshotSerializer
 
@@ -14,15 +13,15 @@ from .serializers.snapshots import AccessUserSnapshotSerializer
 
 class LoginView(APIView):
     """
-    DOCSTRING: Login View
+        DOCSTRING: Login View
 
-    Description:
-    - Authenticate a CentralChat user and return a REST Framework authentication token.
+        Description:
+        - Authenticate a CentralChat user and return a REST Framework authentication token.
 
-    Notes:
-    - The endpoint is publicly accessible.
-    - A single persistent token is associated with the authenticated user.
-    - Successful responses include the authentication token and an AccessUser snapshot.
+        Notes:
+        - The endpoint is publicly accessible.
+        - A single persistent token is associated with the authenticated user.
+        - Successful responses include the authentication token and an AccessUser snapshot.
     """
 
     authentication_classes = []
@@ -32,16 +31,21 @@ class LoginView(APIView):
 
     def post(self, request):
         serializer = self.login_business_serializer(data=request.data)
+
         if not serializer.is_valid():
             error_message = "Autenticación rechazada: las credenciales proporcionadas no son válidas."
             response_data = serializer.errors
             response_payload = {"error_message": error_message, "data": response_data}
+
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
+
         user = serializer.validated_data["user"]
         token, created = Token.objects.get_or_create(user=user)
+
         success_message = "Autenticación completada correctamente."
         response_data = {"token": token.key, "user": self.accessuser_snapshot_serializer(user).data}
         response_payload = {"success_message": success_message, "data": response_data}
+
         return Response(response_payload, status=HTTP_200_OK)
 
 
@@ -62,9 +66,11 @@ class LogoutView(APIView):
 
     def post(self, request):
         request.auth.delete()
+
         success_message = "Sesión finalizada correctamente."
         response_data = None
         response_payload = {"success_message": success_message, "data": response_data}
+
         return Response(response_payload, status=HTTP_200_OK)
 
 
@@ -88,6 +94,7 @@ class CurrentUserView(APIView):
         success_message = "Usuario autenticado recuperado correctamente."
         response_data = self.snapshot_serializer(request.user).data
         response_payload = {"success_message": success_message, "data": response_data}
+
         return Response(response_payload, status=HTTP_200_OK)
 
 
@@ -101,6 +108,8 @@ class AdministratorCreateView(APIView):
         Notes:
         - The ADMINISTRATOR role is assigned exclusively by the backend.
         - Clients cannot select or override the resulting role.
+        - Administrator creation is delegated to the access operation layer.
+        - Successful administrator creation is recorded by the centralized auditing subsystem.
     """
 
     authentication_classes = [TokenAuthentication]
@@ -109,15 +118,23 @@ class AdministratorCreateView(APIView):
 
     def post(self, request):
         serializer = self.business_serializer(data=request.data)
+
         if not serializer.is_valid():
             error_message = "Creación de administrador rechazada: los datos proporcionados no son válidos."
             response_data = serializer.errors
             response_payload = {"error_message": error_message, "data": response_data}
+
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
-        user = AccessUser.objects.create_user(role=ROLE_REGISTRY.ADMINISTRATOR, **serializer.validated_data)
+
+        user = create_administrator(
+            validated_data=serializer.validated_data,
+            actor=request.user,
+        )
+
         success_message = "Administrador creado correctamente."
         response_data = self.business_serializer(user).data
         response_payload = {"success_message": success_message, "data": response_data}
+
         return Response(response_payload, status=HTTP_201_CREATED)
 
 
@@ -131,20 +148,32 @@ class MonitorCreateView(APIView):
         Notes:
         - The MONITOR role is assigned exclusively by the backend.
         - Clients cannot select or override the resulting role.
+        - Monitor creation is delegated to the access operation layer.
+        - Company access remains a separate organizations operation.
+        - Successful monitor creation is recorded by the centralized auditing subsystem.
     """
+
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated, IsAdministrator]
     business_serializer = AccessUserSerializer
 
     def post(self, request):
         serializer = self.business_serializer(data=request.data)
+
         if not serializer.is_valid():
             error_message = "Creación de monitor rechazada: los datos proporcionados no son válidos."
             response_data = serializer.errors
             response_payload = {"error_message": error_message, "data": response_data}
+
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
-        user = AccessUser.objects.create_user(role=ROLE_REGISTRY.MONITOR, **serializer.validated_data)
+
+        user = create_monitor(
+            validated_data=serializer.validated_data,
+            actor=request.user,
+        )
+
         success_message = "Monitor creado correctamente."
         response_data = self.business_serializer(user).data
         response_payload = {"success_message": success_message, "data": response_data}
+
         return Response(response_payload, status=HTTP_201_CREATED)

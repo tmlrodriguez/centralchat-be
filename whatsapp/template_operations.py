@@ -2,6 +2,8 @@ import re
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from auditing.operations import schedule_audit_event
+from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
 from .meta import create_meta_whatsapp_message_template, delete_meta_whatsapp_message_template, list_meta_whatsapp_message_templates, send_meta_whatsapp_template_message, update_meta_whatsapp_message_template
 from .models import Conversation, Customer, Message, WhatsAppBusinessAccount, WhatsAppMessageTemplate, WhatsAppNumber
 from .realtime import schedule_conversation_updated_event, schedule_message_created_event
@@ -62,7 +64,7 @@ def normalize_template_parameter_format(value):
 
 
 @transaction.atomic
-def synchronize_whatsapp_message_templates(whatsapp_business_account, actor):
+def synchronize_whatsapp_message_templates(whatsapp_business_account, actor, audit_event=True):
     """
         DOCSTRING: Synchronize WhatsApp Message Templates
 
@@ -71,6 +73,7 @@ def synchronize_whatsapp_message_templates(whatsapp_business_account, actor):
         - Create templates that do not yet exist locally.
         - Update templates that already exist locally.
         - Mark previously synchronized templates as unavailable when they disappear from Meta.
+        - Record explicit template synchronization in the centralized audit subsystem.
 
         Notes:
         - Synchronization is idempotent.
@@ -79,6 +82,8 @@ def synchronize_whatsapp_message_templates(whatsapp_business_account, actor):
         - Newly synchronized templates record the current actor as created_by and updated_by.
         - Templates removed from Meta remain preserved locally for historical traceability.
         - A synchronization failure rolls back the complete local synchronization transaction.
+        - audit_event may be disabled when synchronization is executed internally after another explicit template operation.
+        - Template content and parameter values are not copied into audit metadata.
     """
 
     account = WhatsAppBusinessAccount.objects.select_for_update().select_related("company", "meta_integration").get(id=whatsapp_business_account.id)
@@ -154,6 +159,26 @@ def synchronize_whatsapp_message_templates(whatsapp_business_account, actor):
         missing_templates = missing_templates.exclude(meta_template_id__in=seen_meta_template_ids)
 
     removed_count = missing_templates.update(is_available_in_meta=False, removed_from_meta_at=synchronized_at, updated_by=actor, updated_at=synchronized_at)
+
+    if audit_event:
+        schedule_audit_event(
+            category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+            action=AUDIT_ACTION_REGISTRY.SYNCHRONIZE,
+            description="Plantillas de WhatsApp sincronizadas con Meta.",
+            actor=actor,
+            company=account.company,
+            target=account,
+            metadata={
+                "whatsapp_business_account_id": account.id,
+                "meta_integration_id": account.meta_integration_id,
+                "meta_waba_id": account.meta_waba_id,
+                "created": created_count,
+                "updated": updated_count,
+                "removed": removed_count,
+                "total": len(meta_templates),
+                "synchronized_at": synchronized_at.isoformat(),
+            },
+        )
 
     return {
         "created": created_count,
@@ -385,23 +410,39 @@ def persist_outbound_template_message(conversation, whatsapp_message_template, m
 
         Description:
         - Persist a Meta-accepted outbound template message inside CentralChat.
+        - Update the corresponding conversation preview.
+        - Record the user-initiated template send in the centralized audit subsystem.
 
         Notes:
         - The initial local state is PENDING.
         - Existing webhook status logic later advances the lifecycle.
         - content_data preserves template identity and parameters used at send time.
+        - Audit metadata identifies the template and resulting message without storing template parameter values.
+        - Duplicate persistence does not create a duplicate SEND audit event.
     """
+
+    locked_conversation = Conversation.objects.select_for_update().select_related(
+        "customer",
+        "whatsapp_number",
+        "whatsapp_number__company",
+        "whatsapp_number__branch",
+    ).get(id=conversation.id)
 
     message_timestamp = timezone.now()
 
+    existing_message = Message.objects.filter(meta_message_id=meta_message_id).first()
+
+    if existing_message:
+        return existing_message, False
+
     try:
         message = Message.objects.create(
-            conversation=conversation,
+            conversation=locked_conversation,
             meta_message_id=meta_message_id,
             direction=MESSAGE_DIRECTION_REGISTRY.OUTBOUND,
             message_type=MESSAGE_TYPE_REGISTRY.TEMPLATE,
             status=MESSAGE_STATUS_REGISTRY.PENDING,
-            sender_phone_number=conversation.whatsapp_number.phone_number,
+            sender_phone_number=locked_conversation.whatsapp_number.phone_number,
             recipient_phone_number=recipient_phone_number,
             text_body=render_template_body_text(whatsapp_message_template, send_components),
             original_text_body="",
@@ -421,16 +462,41 @@ def persist_outbound_template_message(conversation, whatsapp_message_template, m
             created_by=actor,
             updated_by=actor,
         )
+
     except IntegrityError:
         return Message.objects.get(meta_message_id=meta_message_id), False
 
-    conversation.last_message = message
-    conversation.last_message_at = message.message_timestamp
-    conversation.updated_by = actor
-    conversation.save(update_fields=["last_message", "last_message_at", "updated_by", "updated_at"])
+    locked_conversation.last_message = message
+    locked_conversation.last_message_at = message.message_timestamp
+    locked_conversation.updated_by = actor
+    locked_conversation.save(update_fields=["last_message", "last_message_at", "updated_by", "updated_at"])
 
     schedule_message_created_event(message=message)
-    schedule_conversation_updated_event(conversation=conversation)
+    schedule_conversation_updated_event(conversation=locked_conversation)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.SEND,
+        description="Plantilla de WhatsApp enviada desde CentralChat.",
+        actor=actor,
+        company=locked_conversation.whatsapp_number.company,
+        branch=locked_conversation.whatsapp_number.branch,
+        target=message,
+        metadata={
+            "message_id": message.id,
+            "meta_message_id": message.meta_message_id,
+            "conversation_id": locked_conversation.id,
+            "customer_id": locked_conversation.customer_id,
+            "whatsapp_number_id": locked_conversation.whatsapp_number_id,
+            "whatsapp_message_template_id": whatsapp_message_template.id,
+            "meta_template_id": whatsapp_message_template.meta_template_id,
+            "template_name": whatsapp_message_template.name,
+            "template_language": whatsapp_message_template.language,
+            "template_category": whatsapp_message_template.category,
+            "message_type": message.message_type,
+            "direction": message.direction,
+        },
+    )
 
     return message, True
 
@@ -445,6 +511,7 @@ def send_template_to_existing_conversation(conversation, whatsapp_message_templa
         Notes:
         - Meta transmission occurs before persistence.
         - No fake local message is created if Meta rejects the request.
+        - Successful persistence records the corresponding SEND audit event.
     """
 
     conversation = Conversation.objects.select_related(
@@ -498,6 +565,7 @@ def send_template_to_new_conversation(whatsapp_number, recipient_phone_number, w
         - Failed Meta sends never create empty conversations.
         - Existing customer and conversation records are reused when already present.
         - The operation creates local resources only after Meta returns a valid message identifier.
+        - Successful persistence records the corresponding SEND audit event.
     """
 
     whatsapp_number = WhatsAppNumber.objects.select_related("company", "branch", "whatsapp_business_account", "whatsapp_business_account__meta_integration").get(id=whatsapp_number.id)
@@ -545,10 +613,14 @@ def create_whatsapp_message_template(whatsapp_business_account, validated_data, 
         DOCSTRING: Create WhatsApp Message Template
 
         Description:
-        - Submit a new template to Meta and synchronize the WABA template catalog.
+        - Submit a new template to Meta.
+        - Synchronize the WABA template catalog after Meta accepts the request.
+        - Record the template creation in the centralized audit subsystem.
 
         Notes:
         - Meta remains authoritative for template ID and lifecycle state.
+        - Internal synchronization does not generate an additional SYNCHRONIZE audit event.
+        - Template body content and example parameter values are not copied into audit metadata.
     """
 
     create_meta_whatsapp_message_template(
@@ -560,9 +632,39 @@ def create_whatsapp_message_template(whatsapp_business_account, validated_data, 
         components=validated_data["components"],
     )
 
-    synchronize_whatsapp_message_templates(whatsapp_business_account=whatsapp_business_account, actor=actor)
+    synchronize_whatsapp_message_templates(
+        whatsapp_business_account=whatsapp_business_account,
+        actor=actor,
+        audit_event=False,
+    )
 
-    return WhatsAppMessageTemplate.objects.filter(whatsapp_business_account=whatsapp_business_account, name=validated_data["name"], language=validated_data["language"]).first()
+    template = WhatsAppMessageTemplate.objects.select_related("whatsapp_business_account__company").filter(
+        whatsapp_business_account=whatsapp_business_account,
+        name=validated_data["name"],
+        language=validated_data["language"],
+    ).first()
+
+    if template:
+        schedule_audit_event(
+            category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+            action=AUDIT_ACTION_REGISTRY.CREATE,
+            description="Plantilla de WhatsApp creada en Meta.",
+            actor=actor,
+            company=template.whatsapp_business_account.company,
+            target=template,
+            metadata={
+                "whatsapp_message_template_id": template.id,
+                "whatsapp_business_account_id": template.whatsapp_business_account_id,
+                "meta_template_id": template.meta_template_id,
+                "name": template.name,
+                "language": template.language,
+                "category": template.category,
+                "status": template.status,
+                "parameter_format": template.parameter_format,
+            },
+        )
+
+    return template
 
 
 def update_whatsapp_message_template(whatsapp_message_template, validated_data, actor):
@@ -570,8 +672,20 @@ def update_whatsapp_message_template(whatsapp_message_template, validated_data, 
         DOCSTRING: Update WhatsApp Message Template
 
         Description:
-        - Submit supported template modifications to Meta and resynchronize local state.
+        - Submit supported template modifications to Meta.
+        - Resynchronize the corresponding WABA template catalog.
+        - Record the successful update in the centralized audit subsystem.
+
+        Notes:
+        - Meta remains authoritative for the resulting template state.
+        - Internal synchronization does not generate an additional SYNCHRONIZE audit event.
+        - Audit metadata records changed field names without storing complete template components.
     """
+
+    changed_fields = list(validated_data.keys())
+
+    previous_category = whatsapp_message_template.category
+    previous_status = whatsapp_message_template.status
 
     update_meta_whatsapp_message_template(
         whatsapp_message_template=whatsapp_message_template,
@@ -579,9 +693,36 @@ def update_whatsapp_message_template(whatsapp_message_template, validated_data, 
         components=validated_data.get("components"),
     )
 
-    synchronize_whatsapp_message_templates(whatsapp_business_account=whatsapp_message_template.whatsapp_business_account, actor=actor)
+    synchronize_whatsapp_message_templates(
+        whatsapp_business_account=whatsapp_message_template.whatsapp_business_account,
+        actor=actor,
+        audit_event=False,
+    )
 
-    return WhatsAppMessageTemplate.objects.get(id=whatsapp_message_template.id)
+    template = WhatsAppMessageTemplate.objects.select_related("whatsapp_business_account__company").get(id=whatsapp_message_template.id)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.UPDATE,
+        description="Plantilla de WhatsApp actualizada en Meta.",
+        actor=actor,
+        company=template.whatsapp_business_account.company,
+        target=template,
+        metadata={
+            "whatsapp_message_template_id": template.id,
+            "whatsapp_business_account_id": template.whatsapp_business_account_id,
+            "meta_template_id": template.meta_template_id,
+            "name": template.name,
+            "language": template.language,
+            "changed_fields": changed_fields,
+            "previous_category": previous_category,
+            "current_category": template.category,
+            "previous_status": previous_status,
+            "current_status": template.status,
+        },
+    )
+
+    return template
 
 
 def delete_whatsapp_message_template(whatsapp_message_template, actor):
@@ -589,18 +730,44 @@ def delete_whatsapp_message_template(whatsapp_message_template, actor):
         DOCSTRING: Delete WhatsApp Message Template
 
         Description:
-        - Request template deletion from Meta and preserve the local historical record.
+        - Request template deletion from Meta.
+        - Preserve the local historical template record.
+        - Mark the local template unavailable and inactive.
+        - Record the deletion in the centralized audit subsystem.
 
         Notes:
-        - The local template becomes unavailable and inactive after Meta accepts deletion.
+        - Local history remains preserved after Meta deletion.
+        - Audit metadata preserves template identity without storing template content.
+        - The audit event is emitted only after successful Meta deletion and local lifecycle update.
     """
 
-    delete_meta_whatsapp_message_template(whatsapp_message_template)
+    template = WhatsAppMessageTemplate.objects.select_related("whatsapp_business_account__company").get(id=whatsapp_message_template.id)
 
-    whatsapp_message_template.is_available_in_meta = False
-    whatsapp_message_template.is_active = False
-    whatsapp_message_template.removed_from_meta_at = timezone.now()
-    whatsapp_message_template.updated_by = actor
-    whatsapp_message_template.save(update_fields=["is_available_in_meta", "is_active", "removed_from_meta_at", "updated_by", "updated_at"])
+    delete_meta_whatsapp_message_template(template)
 
-    return whatsapp_message_template
+    template.is_available_in_meta = False
+    template.is_active = False
+    template.removed_from_meta_at = timezone.now()
+    template.updated_by = actor
+    template.save(update_fields=["is_available_in_meta", "is_active", "removed_from_meta_at", "updated_by", "updated_at"])
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.DELETE,
+        description="Plantilla de WhatsApp eliminada de Meta.",
+        actor=actor,
+        company=template.whatsapp_business_account.company,
+        target=template,
+        metadata={
+            "whatsapp_message_template_id": template.id,
+            "whatsapp_business_account_id": template.whatsapp_business_account_id,
+            "meta_template_id": template.meta_template_id,
+            "name": template.name,
+            "language": template.language,
+            "category": template.category,
+            "status": template.status,
+            "removed_from_meta_at": template.removed_from_meta_at.isoformat(),
+        },
+    )
+
+    return template

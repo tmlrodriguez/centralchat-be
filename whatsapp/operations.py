@@ -2,6 +2,8 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
 from django.utils import timezone
+from auditing.operations import schedule_audit_event
+from auditing.registry import (AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY)
 from organizations.models import UserCompanyAccess
 from .meta import MetaWhatsAppAPIError, send_meta_whatsapp_text_message
 from .models import Conversation, ConversationReadState, Customer, MediaAttachment, Message, NumberAssignment, WhatsAppNumber
@@ -65,6 +67,7 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
         - Close the previous active assignment before creating the new assignment.
         - Preserve the complete historical responsibility chain.
         - Publish the new assignment state after successful transaction commit.
+        - Record the assignment operation in the centralized audit subsystem.
 
         Notes:
         - Assignment history must always remain preserved.
@@ -72,7 +75,8 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
         - The member must remain active and belong to the same company and branch as the number.
         - Reassigning the number to the currently assigned member is rejected.
         - Only one active assignment may remain after the transaction completes.
-        - Realtime assignment events are never emitted for rolled-back transactions.
+        - Realtime and audit events are never emitted for rolled-back transactions.
+        - Reassignment audit metadata preserves both previous and new responsibility identifiers.
     """
 
     locked_number = WhatsAppNumber.objects.select_for_update().select_related("company", "branch").get(id=whatsapp_number.id)
@@ -84,6 +88,9 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
     if current_assignment and current_assignment.member_id == member.id:
         raise ValidationError({"member": "Asignación de número rechazada: el miembro ya se encuentra asignado a este número."})
 
+    previous_assignment_id = current_assignment.id if current_assignment else None
+    previous_member_id = current_assignment.member_id if current_assignment else None
+
     if current_assignment:
         current_assignment.is_active = False
         current_assignment.unassigned_at = timezone.now()
@@ -93,6 +100,23 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
     assignment = NumberAssignment.objects.create(whatsapp_number=locked_number, member=member, created_by=actor, updated_by=actor)
 
     schedule_number_assignment_changed_event(whatsapp_number=locked_number)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.ASSIGN,
+        description="Número de WhatsApp asignado a un miembro.",
+        actor=actor,
+        company=locked_number.company,
+        branch=locked_number.branch,
+        target=assignment,
+        metadata={
+            "whatsapp_number_id": locked_number.id,
+            "previous_assignment_id": previous_assignment_id,
+            "previous_member_id": previous_member_id,
+            "new_assignment_id": assignment.id,
+            "new_member_id": member.id,
+        },
+    )
 
     return assignment
 
@@ -106,19 +130,22 @@ def unassign_whatsapp_number(whatsapp_number, actor):
         - End the current active member assignment for a WhatsApp number.
         - Preserve the assignment record as historical responsibility information.
         - Publish the unassigned state after successful transaction commit.
+        - Record the unassignment operation in the centralized audit subsystem.
 
         Notes:
         - The WhatsApp number is locked while the active assignment is closed.
         - Historical assignment records are never deleted.
         - An explicit validation error is returned when no active assignment exists.
-        - Realtime assignment events are never emitted for rolled-back transactions.
+        - Realtime and audit events are never emitted for rolled-back transactions.
     """
 
-    locked_number = WhatsAppNumber.objects.select_for_update().get(id=whatsapp_number.id)
+    locked_number = WhatsAppNumber.objects.select_for_update().select_related("company", "branch").get(id=whatsapp_number.id)
     assignment = NumberAssignment.objects.select_for_update().filter(whatsapp_number=locked_number, is_active=True).first()
 
     if assignment is None:
         raise ValidationError({"assignment": "Desasignación rechazada: el número no tiene una asignación activa."})
+
+    previous_member_id = assignment.member_id
 
     assignment.is_active = False
     assignment.unassigned_at = timezone.now()
@@ -126,6 +153,22 @@ def unassign_whatsapp_number(whatsapp_number, actor):
     assignment.save(update_fields=["is_active", "unassigned_at", "updated_by", "updated_at"])
 
     schedule_number_assignment_changed_event(whatsapp_number=locked_number)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.UNASSIGN,
+        description="Número de WhatsApp desasignado de un miembro.",
+        actor=actor,
+        company=locked_number.company,
+        branch=locked_number.branch,
+        target=assignment,
+        metadata={
+            "whatsapp_number_id": locked_number.id,
+            "assignment_id": assignment.id,
+            "previous_member_id": previous_member_id,
+            "unassigned_at": assignment.unassigned_at.isoformat(),
+        },
+    )
 
     return assignment
 
@@ -138,6 +181,7 @@ def activate_whatsapp_monitoring(whatsapp_number, actor):
         Description:
         - Activate monitored message capture for a configured WhatsApp number.
         - Establish the timestamp from which new monitored messages become eligible for persistence.
+        - Record the monitoring activation in the centralized audit subsystem.
 
         Notes:
         - The WhatsApp number is locked while the monitoring lifecycle is changed.
@@ -146,6 +190,7 @@ def activate_whatsapp_monitoring(whatsapp_number, actor):
         - The WhatsApp Business Account webhook must be configured.
         - Monitoring activation must not import historical messages.
         - monitoring_started_at defines the inclusive beginning of the current monitoring period.
+        - Audit history is created only if the surrounding transaction commits successfully.
     """
 
     locked_number = WhatsAppNumber.objects.select_for_update().select_related("company", "branch", "whatsapp_business_account").get(id=whatsapp_number.id)
@@ -180,6 +225,20 @@ def activate_whatsapp_monitoring(whatsapp_number, actor):
     locked_number.updated_by = actor
     locked_number.save(update_fields=["is_monitoring_enabled", "monitoring_started_at", "monitoring_stopped_at", "updated_by", "updated_at"])
 
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.ACTIVATE,
+        description="Monitoreo de número de WhatsApp activado.",
+        actor=actor,
+        company=locked_number.company,
+        branch=locked_number.branch,
+        target=locked_number,
+        metadata={
+            "whatsapp_number_id": locked_number.id,
+            "monitoring_started_at": locked_number.monitoring_started_at.isoformat(),
+        },
+    )
+
     return locked_number
 
 
@@ -190,15 +249,17 @@ def deactivate_whatsapp_monitoring(whatsapp_number, actor):
 
         Description:
         - Stop monitored message capture for an active WhatsApp monitoring configuration.
+        - Record the monitoring deactivation in the centralized audit subsystem.
 
         Notes:
         - The WhatsApp number is locked while the monitoring lifecycle is changed.
         - Previously captured messages remain preserved.
         - Messages received after monitoring_stopped_at must not become monitored history.
         - Deactivation does not disconnect the WhatsApp number from Meta.
+        - Audit history is created only if the surrounding transaction commits successfully.
     """
 
-    locked_number = WhatsAppNumber.objects.select_for_update().get(id=whatsapp_number.id)
+    locked_number = WhatsAppNumber.objects.select_for_update().select_related("company", "branch").get(id=whatsapp_number.id)
 
     if not locked_number.is_monitoring_enabled:
         raise ValidationError({"whatsapp_number": "Desactivación de monitoreo rechazada: el monitoreo no se encuentra activo."})
@@ -207,6 +268,21 @@ def deactivate_whatsapp_monitoring(whatsapp_number, actor):
     locked_number.monitoring_stopped_at = timezone.now()
     locked_number.updated_by = actor
     locked_number.save(update_fields=["is_monitoring_enabled", "monitoring_stopped_at", "updated_by", "updated_at"])
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
+        description="Monitoreo de número de WhatsApp desactivado.",
+        actor=actor,
+        company=locked_number.company,
+        branch=locked_number.branch,
+        target=locked_number,
+        metadata={
+            "whatsapp_number_id": locked_number.id,
+            "monitoring_started_at": locked_number.monitoring_started_at.isoformat() if locked_number.monitoring_started_at else None,
+            "monitoring_stopped_at": locked_number.monitoring_stopped_at.isoformat(),
+        },
+    )
 
     return locked_number
 
@@ -248,6 +324,7 @@ def mark_conversation_as_read(conversation, user):
         - Reset the user's unread message counter.
         - Record the most recent persisted message acknowledged by the user.
         - Publish the new read state after successful transaction commit.
+        - Record the conversation opening and read acknowledgement in the centralized audit subsystem.
 
         Notes:
         - Read state is maintained independently for every monitoring user.
@@ -255,12 +332,15 @@ def mark_conversation_as_read(conversation, user):
         - The same conversation lock is also used during unread increments.
         - Marking a conversation as read never modifies another monitoring user's state.
         - Realtime read-state events are delivered only to the corresponding user's private group.
+        - Audit metadata does not include WhatsApp message content.
     """
 
-    locked_conversation = Conversation.objects.select_for_update().select_related("last_message").get(id=conversation.id)
+    locked_conversation = Conversation.objects.select_for_update().select_related("last_message", "whatsapp_number__company", "whatsapp_number__branch").get(id=conversation.id)
     opened_at = timezone.now()
 
     read_state = ConversationReadState.objects.select_for_update().filter(conversation=locked_conversation, user=user).first()
+    previous_unread_count = read_state.unread_count if read_state else 0
+    previous_last_opened_at = read_state.last_opened_at if read_state else None
 
     if read_state is None:
         try:
@@ -275,6 +355,8 @@ def mark_conversation_as_read(conversation, user):
 
         except IntegrityError:
             read_state = ConversationReadState.objects.select_for_update().get(conversation=locked_conversation, user=user)
+            previous_unread_count = read_state.unread_count
+            previous_last_opened_at = read_state.last_opened_at
             read_state.is_read = True
             read_state.unread_count = 0
             read_state.last_read_message = locked_conversation.last_message
@@ -289,6 +371,24 @@ def mark_conversation_as_read(conversation, user):
         read_state.save(update_fields=["is_read", "unread_count", "last_read_message", "last_opened_at", "updated_at"])
 
     schedule_conversation_read_state_changed_event(read_state=read_state)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.READ,
+        description="Conversación de WhatsApp abierta y marcada como leída.",
+        actor=user,
+        company=locked_conversation.whatsapp_number.company,
+        branch=locked_conversation.whatsapp_number.branch,
+        target=locked_conversation,
+        metadata={
+            "conversation_id": locked_conversation.id,
+            "whatsapp_number_id": locked_conversation.whatsapp_number_id,
+            "previous_unread_count": previous_unread_count,
+            "last_read_message_id": locked_conversation.last_message_id,
+            "previous_last_opened_at": previous_last_opened_at.isoformat() if previous_last_opened_at else None,
+            "last_opened_at": opened_at.isoformat(),
+        },
+    )
 
     return read_state
 
@@ -309,6 +409,7 @@ def mark_conversation_as_unread(conversation, message):
         - Concurrent creation of the same read-state record is protected by the unique database constraint.
         - last_read_message is never changed when a new unread message arrives.
         - Realtime read-state events remain private to the corresponding monitor.
+        - Automatic unread-counter changes are not audit events because they are system-generated message-ingestion state.
     """
 
     if not is_message_relevant_for_unread(message):
@@ -332,6 +433,7 @@ def mark_conversation_as_unread(conversation, message):
         if not affected_rows:
             try:
                 ConversationReadState.objects.create(conversation=locked_conversation, user=user, is_read=False, unread_count=1)
+
             except IntegrityError:
                 ConversationReadState.objects.filter(conversation=locked_conversation, user=user).update(is_read=False, unread_count=F("unread_count") + 1)
 
@@ -359,6 +461,7 @@ def recalculate_conversation_read_state(conversation, user):
         - Only relevant inbound messages are counted.
         - Messages at or before last_read_message are considered acknowledged.
         - Reaction messages and revoked messages are excluded from unread calculation.
+        - Automatic read-state repair is not treated as a human audit action.
     """
 
     locked_conversation = Conversation.objects.select_for_update().get(id=conversation.id)
@@ -603,6 +706,7 @@ def apply_message_status(meta_message_id, status, status_timestamp, failure_code
         - PENDING, SENT, DELIVERED, and READ represent progressive outbound delivery states.
         - FAILED is accepted unless the message already reached DELIVERED or READ.
         - Duplicate status notifications are idempotent.
+        - Automatic Meta delivery-status transitions are operational state and are not recorded as human audit events.
     """
 
     message = Message.objects.select_for_update().filter(meta_message_id=meta_message_id, is_active=True).first()
@@ -636,6 +740,8 @@ def apply_message_status(meta_message_id, status, status_timestamp, failure_code
         message.failure_code = str(failure_code or "")
         message.failure_message = failure_message or ""
         message.save(update_fields=["status", "status_updated_at", "failed_at", "failure_code", "failure_message", "updated_at"])
+
+        schedule_message_status_changed_event(message=message)
 
         return message, True
 
@@ -679,6 +785,8 @@ def apply_message_status(meta_message_id, status, status_timestamp, failure_code
 
     message.save(update_fields=["status", "status_updated_at", "sent_at", "delivered_at", "read_at", "updated_at"])
 
+    schedule_message_status_changed_event(message=message)
+
     return message, True
 
 
@@ -696,6 +804,7 @@ def edit_message(meta_message_id, text_body, content_data, message_type, edited_
         - Revoked messages cannot be made visible again by delayed edit events.
         - Older or duplicate edit events are ignored.
         - Editing a message does not increment unread counters.
+        - Meta-originated edit synchronization is not recorded as a human audit action.
     """
 
     message = Message.objects.select_for_update().filter(meta_message_id=meta_message_id, is_active=True).first()
@@ -737,6 +846,7 @@ def revoke_message(meta_message_id, revoked_at):
         - Serializers hide revoked text and structured content from monitoring responses.
         - Revocation is irreversible inside CentralChat.
         - Revocation does not increment unread counters.
+        - Meta-originated revocation synchronization is not recorded as a human audit action.
     """
 
     message = Message.objects.select_for_update().filter(meta_message_id=meta_message_id, is_active=True).first()
@@ -771,6 +881,7 @@ def persist_whatsapp_single_message(meta_integration, whatsapp_number, metadata,
         - Edits and revocations may update already persisted monitored messages after monitoring has stopped.
         - Synchronized outbound messages from WhatsApp Business App Coexistence are persisted as OUTBOUND.
         - Duplicate Meta message identifiers are concurrency-safe and idempotent.
+        - Webhook-ingested messages are operational synchronization data and are not recorded as user audit events.
     """
 
     message_timestamp = parse_meta_timestamp(message_data.get("timestamp"))
@@ -1148,6 +1259,7 @@ def persist_outbound_whatsapp_message(conversation, meta_message_id, text_body, 
         - Persist an outbound WhatsApp text message accepted by Meta.
         - Register the message using Meta's message identifier.
         - Update the corresponding conversation preview.
+        - Record the user-initiated send operation in the centralized audit subsystem.
 
         Notes:
         - The operation is idempotent through Message.meta_message_id.
@@ -1155,12 +1267,19 @@ def persist_outbound_whatsapp_message(conversation, meta_message_id, text_body, 
         - Outbound messages never increment monitoring-user unread counters.
         - message_timestamp represents the CentralChat send time because Meta's send response does not provide the final delivery timestamp.
         - The actor is persisted through the author fields for traceability.
+        - WhatsApp message text is intentionally excluded from audit metadata.
+        - Duplicate persistence does not create a duplicate SEND audit event.
     """
 
     if message_timestamp is None:
         message_timestamp = timezone.now()
 
-    locked_conversation = Conversation.objects.select_for_update().select_related("customer", "whatsapp_number").get(id=conversation.id)
+    locked_conversation = Conversation.objects.select_for_update().select_related(
+        "customer",
+        "whatsapp_number",
+        "whatsapp_number__company",
+        "whatsapp_number__branch",
+    ).get(id=conversation.id)
 
     existing_message = Message.objects.filter(meta_message_id=meta_message_id).first()
 
@@ -1194,6 +1313,25 @@ def persist_outbound_whatsapp_message(conversation, meta_message_id, text_body, 
     schedule_message_created_event(message=message)
     schedule_conversation_updated_event(conversation=locked_conversation)
 
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
+        action=AUDIT_ACTION_REGISTRY.SEND,
+        description="Mensaje de WhatsApp enviado desde CentralChat.",
+        actor=actor,
+        company=locked_conversation.whatsapp_number.company,
+        branch=locked_conversation.whatsapp_number.branch,
+        target=message,
+        metadata={
+            "message_id": message.id,
+            "meta_message_id": message.meta_message_id,
+            "conversation_id": locked_conversation.id,
+            "whatsapp_number_id": locked_conversation.whatsapp_number_id,
+            "customer_id": locked_conversation.customer_id,
+            "message_type": message.message_type,
+            "direction": message.direction,
+        },
+    )
+
     return message, True
 
 
@@ -1213,6 +1351,8 @@ def send_outbound_whatsapp_text_message(conversation, text_body, actor):
         - Later Meta status webhooks reconcile the lifecycle to SENT, DELIVERED, READ, or FAILED.
         - Meta API failures do not create a fake WhatsApp message because no authoritative Meta message identifier exists.
         - Tenant and resource relationships are validated before any Meta API call is performed.
+        - Successful local persistence creates the corresponding SEND audit event.
+        - Message body content is never copied into auditing metadata.
     """
 
     conversation = Conversation.objects.select_related(
