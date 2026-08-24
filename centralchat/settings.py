@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 import os
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,19 +18,32 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+def get_environment_boolean(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ["true", "1", "yes", "on"]
 
+def get_environment_list(name, default=None):
+    value = os.environ.get(name)
+    if value is None:
+        return default or []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', None)
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+DEBUG = get_environment_boolean("DJANGO_DEBUG", default=False)
+ALLOWED_HOSTS = get_environment_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', True)
-ALLOWED_HOSTS = ['127.0.0.1']
+if DEBUG:
+    ALLOWED_HOSTS.append(".trycloudflare.com")
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = ['http://localhost:5173']
+CSRF_TRUSTED_ORIGINS = ["https://*.trycloudflare.com"]
 
 
 # Application definition
@@ -148,21 +162,57 @@ MAILERS = {
 
 # Celery + Redis
 
-REDIS_HOST = "127.0.0.1"
-REDIS_PORT = 6379
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+
+REDIS_CHANNEL_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+REDIS_CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
+REDIS_CELERY_RESULT_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/2"
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
             "hosts": [
-                (REDIS_HOST, REDIS_PORT),
+                REDIS_CHANNEL_URL,
             ],
         },
     },
 }
 
-CELERY_BROKER_URL = "redis://127.0.0.1:6379/1"
+CELERY_BROKER_URL = REDIS_CELERY_BROKER_URL
+CELERY_RESULT_BACKEND = REDIS_CELERY_RESULT_URL
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TASK_DEFAULT_QUEUE = "default"
+
+CELERY_TASK_ROUTES = {
+    "whatsapp.tasks.process_whatsapp_webhook_task": {
+        "queue": "whatsapp",
+    },
+    "whatsapp.tasks.store_whatsapp_media_attachment_task": {
+        "queue": "whatsapp_media",
+    },
+}
+
+# Private WhatsApp media configuration.
+
+CENTRALCHAT_META_GRAPH_API_VERSION = "v26.0"
+CENTRALCHAT_META_REQUEST_TIMEOUT = 30
+CENTRALCHAT_META_MEDIA_REQUEST_TIMEOUT = 30
+
+CENTRALCHAT_PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
+CENTRALCHAT_META_MEDIA_MAX_SIZE = 100 * 1024 * 1024
+CENTRALCHAT_META_MEDIA_MEMORY_THRESHOLD = 5 * 1024 * 1024
+CENTRALCHAT_META_MEDIA_TEMPORARY_FILE_CLASS = tempfile.SpooledTemporaryFile
