@@ -1,3 +1,4 @@
+import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -5,9 +6,52 @@ from django.utils import timezone
 from common.mixins import AuthorMixin, LifeCycleMixin, TemporalMixin
 from members.models import Member
 from organizations.models import Branch, Company
-from .registry import MESSAGE_DIRECTION_REGISTRY, MESSAGE_TYPE_REGISTRY
+from .registry import MEDIA_STORAGE_STATUS_REGISTRY, MESSAGE_DIRECTION_REGISTRY, MESSAGE_STATUS_REGISTRY, MESSAGE_TEMPLATE_CATEGORY_REGISTRY, MESSAGE_TEMPLATE_PARAMETER_FORMAT_REGISTRY, MESSAGE_TEMPLATE_STATUS_REGISTRY, MESSAGE_TYPE_REGISTRY
 
 # Define your models here.
+
+class MetaIntegration(TemporalMixin, LifeCycleMixin, AuthorMixin):
+    """
+        DOCSTRING: Meta Integration
+
+        Description:
+        - Represent the Meta application configuration used by a CentralChat company.
+        - Provide the company-specific integration context required for webhook validation and Meta API operations.
+
+        Notes:
+        - A Meta integration belongs to exactly one company.
+        - Sensitive Meta credentials must not be stored directly in this model.
+        - credential_reference identifies the corresponding secret in the configured secure credential store.
+        - webhook_key provides a non-sequential public identifier for webhook routing.
+        - Meta integrations must remain isolated between companies.
+    """
+
+    company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="meta_integrations")
+    meta_app_id = models.CharField(max_length=100, blank=False, null=False)
+    credential_reference = models.CharField(max_length=255, blank=False, null=False, unique=True)
+    webhook_key = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    is_connected = models.BooleanField(default=False)
+    connected_at = models.DateTimeField(blank=True, null=True)
+    disconnected_at = models.DateTimeField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=False, default="")
+
+    class Meta:
+        db_table = "whatsapp_meta_integration"
+        ordering = ["company"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "meta_app_id"],
+                name="unique_company_meta_app",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "is_active"], name="idx_meta_company_active"),
+            models.Index(fields=["webhook_key"], name="idx_meta_webhook_key"),
+        ]
+
+    def __str__(self):
+        return f"{self.company.name} - {self.meta_app_id}"
+
 
 class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
     """
@@ -15,15 +59,17 @@ class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
         Description:
         - Represent a Meta WhatsApp Business Account configured in CentralChat.
-        - Group one or more corporate WhatsApp numbers under the corresponding company integration.
+        - Group one or more corporate WhatsApp numbers under the corresponding company and Meta integration.
 
         Notes:
         - A WhatsApp Business Account belongs to exactly one company.
-        - Meta credentials must not be stored directly in this model.
-        - credential_reference identifies the external secret or credential configuration used by the integration.
+        - The Meta integration must belong to the same company as the WhatsApp Business Account.
+        - Sensitive Meta credentials are managed through the corresponding Meta integration.
         - Records are deactivated instead of destructively deleted.
     """
+
     company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_business_accounts")
+    meta_integration = models.ForeignKey(MetaIntegration, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_business_accounts")
     meta_waba_id = models.CharField(max_length=100, blank=False, null=False, unique=True)
     meta_business_id = models.CharField(max_length=100, blank=False, null=False)
     display_name = models.CharField(max_length=150, blank=False, null=False)
@@ -38,11 +84,68 @@ class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
         ordering = ["display_name"]
         indexes = [
             models.Index(fields=["company", "is_active"], name="idx_waba_company_active"),
+            models.Index(fields=["meta_integration", "is_active"], name="idx_waba_meta_active"),
             models.Index(fields=["company", "is_connected"], name="idx_waba_company_connected"),
         ]
 
     def __str__(self):
         return self.display_name
+
+
+class WhatsAppMessageTemplate(TemporalMixin, LifeCycleMixin, AuthorMixin):
+    """
+        DOCSTRING: WhatsApp Message Template
+
+        Description:
+        - Represent a WhatsApp message template belonging to a configured WhatsApp Business Account.
+        - Persist the latest template definition synchronized from Meta.
+        - Provide the authoritative local template configuration used by CentralChat outbound messaging.
+
+        Notes:
+        - A template belongs to exactly one WhatsApp Business Account.
+        - Template names and languages are unique within the owning WhatsApp Business Account.
+        - meta_template_id identifies the corresponding Meta template resource.
+        - Only APPROVED templates may be used for outbound template messaging.
+        - components stores the normalized Meta template component definition.
+        - quality_score stores Meta quality information when available.
+        - last_synced_at records the latest successful synchronization from Meta.
+        - is_available_in_meta indicates whether the template was present during the latest successful synchronization.
+        - removed_from_meta_at preserves when a previously known template disappeared from Meta.
+        - Template records are preserved instead of destructively deleted when historical messages depend on them.
+    """
+
+    whatsapp_business_account = models.ForeignKey(WhatsAppBusinessAccount, blank=False, null=False, on_delete=models.PROTECT, related_name="message_templates")
+    meta_template_id = models.CharField(max_length=100, blank=False, null=False, unique=True)
+    name = models.CharField(max_length=512, blank=False, null=False)
+    language = models.CharField(max_length=50, blank=False, null=False)
+    category = models.CharField(max_length=30, blank=False, null=False, choices=MESSAGE_TEMPLATE_CATEGORY_REGISTRY.choices, default=MESSAGE_TEMPLATE_CATEGORY_REGISTRY.UNKNOWN)
+    status = models.CharField(max_length=30, blank=False, null=False, choices=MESSAGE_TEMPLATE_STATUS_REGISTRY.choices, default=MESSAGE_TEMPLATE_STATUS_REGISTRY.UNKNOWN)
+    parameter_format = models.CharField(max_length=20, blank=False, null=False, choices=MESSAGE_TEMPLATE_PARAMETER_FORMAT_REGISTRY.choices, default=MESSAGE_TEMPLATE_PARAMETER_FORMAT_REGISTRY.POSITIONAL)
+    components = models.JSONField(blank=True, null=False, default=list)
+    quality_score = models.JSONField(blank=True, null=False, default=dict)
+    rejection_reason = models.TextField(blank=True, null=False, default="")
+    is_available_in_meta = models.BooleanField(default=True)
+    last_synced_at = models.DateTimeField(blank=True, null=True)
+    removed_from_meta_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "whatsapp_message_template"
+        ordering = ["name", "language"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["whatsapp_business_account", "name", "language"],
+                name="unique_waba_template_language",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["whatsapp_business_account", "status"], name="idx_tpl_waba_status"),
+            models.Index(fields=["whatsapp_business_account", "category"], name="idx_tpl_waba_category"),
+            models.Index(fields=["whatsapp_business_account", "language"], name="idx_tpl_waba_language"),
+            models.Index(fields=["whatsapp_business_account", "is_available_in_meta"], name="idx_tpl_waba_available"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} - {self.language}"
 
 
 class WhatsAppNumber(TemporalMixin, LifeCycleMixin, AuthorMixin):
@@ -60,6 +163,7 @@ class WhatsAppNumber(TemporalMixin, LifeCycleMixin, AuthorMixin):
         - Historical WhatsApp synchronization before monitoring_started_at is outside the MVP.
         - Records are deactivated instead of destructively deleted.
     """
+
     company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_numbers")
     branch = models.ForeignKey(Branch, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_numbers")
     whatsapp_business_account = models.ForeignKey(WhatsAppBusinessAccount, blank=False, null=False, on_delete=models.PROTECT, related_name="numbers")
@@ -101,6 +205,7 @@ class NumberAssignment(TemporalMixin, LifeCycleMixin, AuthorMixin):
         - Reassignment must close the existing assignment before creating the new assignment.
         - Historical assignments must never be overwritten or deleted.
     """
+
     whatsapp_number = models.ForeignKey(WhatsAppNumber, blank=False, null=False, on_delete=models.PROTECT, related_name="assignments")
     member = models.ForeignKey(Member, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_number_assignments")
     assigned_at = models.DateTimeField(default=timezone.now)
@@ -132,18 +237,18 @@ class NumberAssignment(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
 class Customer(TemporalMixin, LifeCycleMixin, AuthorMixin):
     """
-    DOCSTRING: Customer
+        DOCSTRING: Customer
 
-    Description:
-    - Represent the external WhatsApp participant communicating with a company-owned WhatsApp number.
-    - Provide a minimal company-scoped identity used to organize monitored conversations.
+        Description:
+        - Represent the external WhatsApp participant communicating with a company-owned WhatsApp number.
+        - Provide a minimal company-scoped identity used to organize monitored conversations.
 
-    Notes:
-    - Customer records are not CRM records.
-    - A customer belongs to exactly one company context.
-    - The same phone number may exist independently under different companies.
-    - Customer phone numbers must be unique within each company.
-    - The model must remain limited to identity information required for conversation monitoring.
+        Notes:
+        - Customer records are not CRM records.
+        - A customer belongs to exactly one company context.
+        - The same phone number may exist independently under different companies.
+        - Customer phone numbers must be unique within each company.
+        - The model must remain limited to identity information required for conversation monitoring.
     """
 
     company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="customers")
@@ -155,7 +260,10 @@ class Customer(TemporalMixin, LifeCycleMixin, AuthorMixin):
         db_table = "whatsapp_customer"
         ordering = ["phone_number"]
         constraints = [
-            models.UniqueConstraint(fields=["company", "phone_number"], name="unique_customer_phone_per_company"),
+            models.UniqueConstraint(
+                fields=["company", "phone_number"],
+                name="unique_customer_phone_per_company",
+            ),
         ]
         indexes = [
             models.Index(fields=["company", "is_active"], name="idx_customer_company_active"),
@@ -168,20 +276,20 @@ class Customer(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
 class Conversation(TemporalMixin, LifeCycleMixin, AuthorMixin):
     """
-    DOCSTRING: Conversation
+        DOCSTRING: Conversation
 
-    Description:
-    - Represent the monitored conversation between one corporate WhatsApp number and one customer.
-    - Provide the parent record used to organize persisted monitored messages.
-    - Maintain the latest message information required for efficient conversation listing.
+        Description:
+        - Represent the monitored conversation between one corporate WhatsApp number and one customer.
+        - Provide the parent record used to organize persisted monitored messages.
+        - Maintain the latest message information required for efficient conversation listing.
 
-    Notes:
-    - A conversation belongs to exactly one WhatsApp number and one customer.
-    - The customer must belong to the same company as the WhatsApp number.
-    - Only one conversation may exist for the same WhatsApp number and customer.
-    - last_message references the most recently persisted message in the conversation.
-    - last_message_at supports efficient ordering without aggregating the complete message history.
-    - Read and unread state is maintained independently per monitoring user through ConversationReadState.
+        Notes:
+        - A conversation belongs to exactly one WhatsApp number and one customer.
+        - The customer must belong to the same company as the WhatsApp number.
+        - Only one conversation may exist for the same WhatsApp number and customer.
+        - last_message references the most recently persisted message in the conversation.
+        - last_message_at supports efficient ordering without aggregating the complete message history.
+        - Read and unread state is maintained independently per monitoring user through ConversationReadState.
     """
 
     whatsapp_number = models.ForeignKey(WhatsAppNumber, blank=False, null=False, on_delete=models.PROTECT, related_name="conversations")
@@ -193,7 +301,10 @@ class Conversation(TemporalMixin, LifeCycleMixin, AuthorMixin):
         db_table = "whatsapp_conversation"
         ordering = ["-last_message_at", "-created_at"]
         constraints = [
-            models.UniqueConstraint(fields=["whatsapp_number", "customer"], name="unique_conversation_per_number_customer"),
+            models.UniqueConstraint(
+                fields=["whatsapp_number", "customer"],
+                name="unique_conversation_per_number_customer",
+            ),
         ]
         indexes = [
             models.Index(fields=["whatsapp_number", "is_active"], name="idx_conversation_number_active"),
@@ -207,42 +318,76 @@ class Conversation(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
 class Message(TemporalMixin, LifeCycleMixin, AuthorMixin):
     """
-    DOCSTRING: Message
+        DOCSTRING: Message
 
-    Description:
-    - Represent a monitored WhatsApp message persisted by CentralChat.
-    - Store normalized message information independently from the raw Meta webhook payload.
+        Description:
+        - Represent a monitored WhatsApp message persisted by CentralChat.
+        - Store normalized message information independently from the raw Meta webhook payload.
+        - Maintain delivery, editing, revocation, structured content, and message-context information.
 
-    Notes:
-    - Messages belong to exactly one conversation.
-    - meta_message_id provides the primary idempotency key for Meta message persistence.
-    - INBOUND represents customer to business.
-    - OUTBOUND represents business to customer.
-    - text_body may be empty for media, revoke, unsupported, and other non-text messages.
-    - Messages must only be persisted when they fall inside the applicable monitoring window.
-    - Duplicate Meta webhook deliveries must not create duplicate message records.
+        Notes:
+        - Messages belong to exactly one conversation.
+        - meta_message_id provides the primary idempotency key for Meta message persistence.
+        - INBOUND represents customer to business.
+        - OUTBOUND represents business to customer.
+        - content_data stores normalized structured content required for non-text message rendering.
+        - meta_context_message_id preserves the referenced Meta message identifier when a message replies to or reacts to another message.
+        - context_message links the referenced message when that message is available locally.
+        - original_text_body preserves the first visible text before an edit.
+        - revoked_at causes serializers to hide original message content and render the deleted-message representation.
+        - Duplicate Meta webhook deliveries must not create duplicate message records.
     """
 
     conversation = models.ForeignKey(Conversation, blank=False, null=False, on_delete=models.PROTECT, related_name="messages")
     meta_message_id = models.CharField(max_length=255, blank=False, null=False, unique=True)
     direction = models.CharField(max_length=20, blank=False, null=False, choices=MESSAGE_DIRECTION_REGISTRY.choices)
     message_type = models.CharField(max_length=20, blank=False, null=False, choices=MESSAGE_TYPE_REGISTRY.choices)
+    status = models.CharField(max_length=20, blank=False, null=False, choices=MESSAGE_STATUS_REGISTRY.choices, default=MESSAGE_STATUS_REGISTRY.RECEIVED)
     sender_phone_number = models.CharField(max_length=30, blank=False, null=False)
     recipient_phone_number = models.CharField(max_length=30, blank=False, null=False)
     text_body = models.TextField(blank=True, null=False, default="")
+    original_text_body = models.TextField(blank=True, null=False, default="")
+    content_data = models.JSONField(blank=True, null=False, default=dict)
+    meta_context_message_id = models.CharField(max_length=255, blank=True, null=False, default="")
+    context_message = models.ForeignKey("self", blank=True, null=True, on_delete=models.SET_NULL, related_name="context_events")
     message_timestamp = models.DateTimeField(blank=False, null=False)
     meta_event_timestamp = models.DateTimeField(blank=False, null=False)
+    status_updated_at = models.DateTimeField(blank=True, null=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+    delivered_at = models.DateTimeField(blank=True, null=True)
+    read_at = models.DateTimeField(blank=True, null=True)
+    failed_at = models.DateTimeField(blank=True, null=True)
+    failure_code = models.CharField(max_length=100, blank=True, null=False, default="")
+    failure_message = models.TextField(blank=True, null=False, default="")
+    edited_at = models.DateTimeField(blank=True, null=True)
     revoked_at = models.DateTimeField(blank=True, null=True)
-    edited_message = models.ForeignKey("self", blank=True, null=True, on_delete=models.PROTECT, related_name="edit_events")
 
     class Meta:
         db_table = "whatsapp_message"
         ordering = ["message_timestamp", "id"]
         indexes = [
             models.Index(fields=["conversation", "message_timestamp"], name="idx_message_conversation_time"),
+            models.Index(fields=["conversation", "status"], name="idx_message_conv_status"),
             models.Index(fields=["direction", "message_timestamp"], name="idx_message_direction_time"),
             models.Index(fields=["message_type", "message_timestamp"], name="idx_message_type_time"),
+            models.Index(fields=["status", "message_timestamp"], name="idx_message_status_time"),
+            models.Index(fields=["meta_context_message_id"], name="idx_message_context_meta"),
         ]
+
+    @property
+    def is_edited(self):
+        return self.edited_at is not None
+
+    @property
+    def is_revoked(self):
+        return self.revoked_at is not None
+
+    @property
+    def display_text(self):
+        if self.is_revoked:
+            return "Este mensaje fue eliminado."
+
+        return self.text_body
 
     def __str__(self):
         return self.meta_message_id
@@ -250,34 +395,47 @@ class Message(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
 class MediaAttachment(TemporalMixin, LifeCycleMixin, AuthorMixin):
     """
-    DOCSTRING: Media Attachment
+        DOCSTRING: Media Attachment
 
-    Description:
-    - Represent metadata for media attached to a monitored WhatsApp message.
-    - Reference privately stored binary content without storing large files directly in PostgreSQL.
+        Description:
+        - Represent metadata and private-storage state for media attached to a monitored WhatsApp message.
+        - Reference privately stored binary content without storing large files directly in PostgreSQL.
 
-    Notes:
-    - Binary content must be stored through object storage.
-    - storage_key identifies the private object-storage location.
-    - Meta media identifiers are used to retrieve supported media from WhatsApp Business Platform.
-    - Permanent public media URLs must not be stored.
+        Notes:
+        - Binary content must be stored through private application storage.
+        - storage_key identifies the private storage object and must never be exposed through normal API responses.
+        - Meta media identifiers are used to retrieve media from WhatsApp Business Platform.
+        - Permanent public media URLs must not be stored.
+        - Storage failures remain retryable.
     """
 
     message = models.ForeignKey(Message, blank=False, null=False, on_delete=models.PROTECT, related_name="media_attachments")
     meta_media_id = models.CharField(max_length=255, blank=False, null=False)
     storage_key = models.CharField(max_length=500, blank=True, null=False, default="")
+    storage_status = models.CharField(max_length=20, blank=False, null=False, choices=MEDIA_STORAGE_STATUS_REGISTRY.choices, default=MEDIA_STORAGE_STATUS_REGISTRY.PENDING)
     mime_type = models.CharField(max_length=150, blank=False, null=False)
     size = models.BigIntegerField(blank=True, null=True)
     original_filename = models.CharField(max_length=255, blank=True, null=False, default="")
     checksum = models.CharField(max_length=255, blank=True, null=False, default="")
     is_stored = models.BooleanField(default=False)
+    stored_at = models.DateTimeField(blank=True, null=True)
+    storage_failed_at = models.DateTimeField(blank=True, null=True)
+    storage_error = models.TextField(blank=True, null=False, default="")
+    retrieval_attempts = models.PositiveIntegerField(default=0)
 
     class Meta:
         db_table = "whatsapp_media_attachment"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "meta_media_id"],
+                name="unique_media_per_message",
+            ),
+        ]
         indexes = [
             models.Index(fields=["message", "is_active"], name="idx_media_message_active"),
             models.Index(fields=["meta_media_id"], name="idx_media_meta_id"),
             models.Index(fields=["is_stored"], name="idx_media_stored"),
+            models.Index(fields=["storage_status"], name="idx_media_storage_status"),
         ]
 
     def __str__(self):
@@ -286,18 +444,18 @@ class MediaAttachment(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
 class ConversationReadState(TemporalMixin):
     """
-    DOCSTRING: Conversation Read State
+        DOCSTRING: Conversation Read State
 
-    Description:
-    - Maintain the read and unread state of a conversation independently for each monitoring user.
-    - Support WhatsApp-style unread indicators in the conversation list.
+        Description:
+        - Maintain the read and unread state of a conversation independently for each monitoring user.
+        - Support WhatsApp-style unread indicators in the conversation list.
 
-    Notes:
-    - Read state belongs to a specific user and conversation combination.
-    - Opening a conversation marks it as read only for the authenticated monitoring user.
-    - A new inbound message marks the conversation as unread for applicable monitoring users.
-    - last_read_message identifies the most recent message acknowledged by the monitoring user.
-    - unread_count supports displaying an unread message badge without recalculating the complete message history.
+        Notes:
+        - Read state belongs to a specific user and conversation combination.
+        - Opening a conversation marks it as read only for the authenticated monitoring user.
+        - A new inbound message marks the conversation as unread for applicable monitoring users.
+        - last_read_message identifies the most recent message acknowledged by the monitoring user.
+        - unread_count supports displaying an unread message badge without recalculating the complete message history.
     """
 
     conversation = models.ForeignKey(Conversation, blank=False, null=False, on_delete=models.CASCADE, related_name="read_states")
@@ -310,7 +468,10 @@ class ConversationReadState(TemporalMixin):
     class Meta:
         db_table = "whatsapp_conversation_read_state"
         constraints = [
-            models.UniqueConstraint(fields=["conversation", "user"], name="unique_conversation_read_state_per_user"),
+            models.UniqueConstraint(
+                fields=["conversation", "user"],
+                name="unique_conversation_read_state_per_user",
+            ),
         ]
         indexes = [
             models.Index(fields=["user", "is_read"], name="idx_read_state_user_read"),

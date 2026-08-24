@@ -1,4 +1,5 @@
 venv/
+private_media/
 
 __pycache__/
 *.py[cod]
