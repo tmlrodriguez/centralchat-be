@@ -44,7 +44,7 @@ def send_realtime_group_event(group_name, event_name, data):
         DOCSTRING: Send Realtime Group Event
 
         Description:
-        - Publish a normalized CentralChat realtime event to a Channels group.
+        - Publish a normalized Dialoqo realtime event to a Channels group.
 
         Notes:
         - Database operations should normally call this helper through transaction.on_commit.

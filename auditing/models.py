@@ -12,7 +12,7 @@ class AuditEvent(TemporalMixin):
         DOCSTRING: Audit Event
 
         Description:
-        - Represent an immutable business or security event recorded by CentralChat.
+        - Represent an immutable business or security event recorded by Dialoqo.
         - Preserve who performed an action, where it occurred, which resource was affected, and contextual metadata required for traceability.
 
         Notes:

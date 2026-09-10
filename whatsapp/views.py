@@ -93,7 +93,7 @@ class MetaIntegrationView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.META,
                 action=AUDIT_ACTION_REGISTRY.CREATE,
-                description="Integración de Meta creada en CentralChat.",
+                description="Integración de Meta creada en Dialoqo.",
                 actor=request.user,
                 company=company,
                 target=integration,
@@ -133,7 +133,7 @@ class MetaIntegrationView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.META,
                 action=AUDIT_ACTION_REGISTRY.UPDATE,
-                description="Integración de Meta actualizada en CentralChat.",
+                description="Integración de Meta actualizada en Dialoqo.",
                 actor=request.user,
                 company=company,
                 target=integration,
@@ -173,7 +173,7 @@ class MetaIntegrationView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.META,
                 action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-                description="Integración de Meta desactivada en CentralChat.",
+                description="Integración de Meta desactivada en Dialoqo.",
                 actor=request.user,
                 company=company,
                 target=integration,
@@ -262,7 +262,7 @@ class WhatsAppBusinessAccountView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
                 action=AUDIT_ACTION_REGISTRY.CREATE,
-                description="Cuenta de WhatsApp Business creada en CentralChat.",
+                description="Cuenta de WhatsApp Business creada en Dialoqo.",
                 actor=request.user,
                 company=company,
                 target=account,
@@ -306,7 +306,7 @@ class WhatsAppBusinessAccountView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
                 action=AUDIT_ACTION_REGISTRY.UPDATE,
-                description="Cuenta de WhatsApp Business actualizada en CentralChat.",
+                description="Cuenta de WhatsApp Business actualizada en Dialoqo.",
                 actor=request.user,
                 company=company,
                 target=account,
@@ -349,7 +349,7 @@ class WhatsAppBusinessAccountView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
                 action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-                description="Cuenta de WhatsApp Business desactivada en CentralChat.",
+                description="Cuenta de WhatsApp Business desactivada en Dialoqo.",
                 actor=request.user,
                 company=company,
                 target=account,
@@ -447,7 +447,7 @@ class WhatsAppNumberView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
                 action=AUDIT_ACTION_REGISTRY.CREATE,
-                description="Número de WhatsApp creado en CentralChat.",
+                description="Número de WhatsApp creado en Dialoqo.",
                 actor=request.user,
                 company=company,
                 branch=branch,
@@ -492,7 +492,7 @@ class WhatsAppNumberView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
                 action=AUDIT_ACTION_REGISTRY.UPDATE,
-                description="Número de WhatsApp actualizado en CentralChat.",
+                description="Número de WhatsApp actualizado en Dialoqo.",
                 actor=request.user,
                 company=company,
                 branch=branch,
@@ -537,7 +537,7 @@ class WhatsAppNumberView(APIView):
             schedule_audit_event(
                 category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
                 action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-                description="Número de WhatsApp desactivado en CentralChat.",
+                description="Número de WhatsApp desactivado en Dialoqo.",
                 actor=request.user,
                 company=company,
                 branch=branch,
@@ -631,7 +631,7 @@ class MonitoringContextView(APIView):
         Description:
         - Return the complete monitoring context available to the authenticated MONITOR user.
         - Provide authorized companies, active branches, and operational WhatsApp numbers.
-        - Supply the hierarchical context required by the CentralChat monitoring frontend.
+        - Supply the hierarchical context required by the Dialoqo monitoring frontend.
 
         Notes:
         - Only MONITOR users may access this endpoint.
@@ -1155,7 +1155,7 @@ class MetaWebhookView(APIView):
         - Queue validated webhook payloads for asynchronous persistence.
 
         Notes:
-        - This endpoint does not require CentralChat authentication.
+        - This endpoint does not require Dialoqo authentication.
         - webhook_key identifies the owning Meta integration.
         - GET verification remains synchronous because Meta requires the challenge response.
         - POST signature validation remains synchronous because untrusted payloads must never enter the task broker.
@@ -1300,7 +1300,7 @@ class OutboundMessageView(APIView):
         DOCSTRING: Outbound Message View
 
         Description:
-        - Send a plain-text WhatsApp message from a monitored CentralChat conversation.
+        - Send a plain-text WhatsApp message from a monitored Dialoqo conversation.
 
         Notes:
         - The authenticated user must have active access to the requested company.

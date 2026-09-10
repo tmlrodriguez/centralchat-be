@@ -822,7 +822,7 @@ def revoke_message(meta_message_id, revoked_at):
         Notes:
         - The original stored record remains available internally for traceability.
         - Serializers hide revoked text and structured content from monitoring responses.
-        - Revocation is irreversible inside CentralChat.
+        - Revocation is irreversible inside Dialoqo.
         - Revocation does not increment unread counters.
         - Meta-originated revocation synchronization is not recorded as a human audit action.
     """
@@ -1054,7 +1054,7 @@ def persist_whatsapp_status_event(value):
         - Supported delivery statuses are sent, delivered, read, and failed.
         - Duplicate and out-of-order notifications must not regress the current state.
         - Unknown statuses are ignored safely.
-        - Delivery statuses never affect CentralChat monitoring-user unread counters.
+        - Delivery statuses never affect Dialoqo monitoring-user unread counters.
     """
 
     statuses = value.get("statuses") or []
@@ -1243,7 +1243,7 @@ def persist_outbound_whatsapp_message(conversation, meta_message_id, text_body, 
         - The operation is idempotent through Message.meta_message_id.
         - Newly accepted outbound messages are stored as PENDING until a Meta delivery-status webhook confirms SENT, DELIVERED, READ, or FAILED.
         - Outbound messages never increment monitoring-user unread counters.
-        - message_timestamp represents the CentralChat send time because Meta's send response does not provide the final delivery timestamp.
+        - message_timestamp represents the Dialoqo send time because Meta's send response does not provide the final delivery timestamp.
         - The actor is persisted through the author fields for traceability.
         - WhatsApp message text is intentionally excluded from audit metadata.
         - Duplicate persistence does not create a duplicate SEND audit event.
@@ -1294,7 +1294,7 @@ def persist_outbound_whatsapp_message(conversation, meta_message_id, text_body, 
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
         action=AUDIT_ACTION_REGISTRY.SEND,
-        description="Mensaje de WhatsApp enviado desde CentralChat.",
+        description="Mensaje de WhatsApp enviado desde Dialoqo.",
         actor=actor,
         company=locked_conversation.whatsapp_number.company,
         branch=locked_conversation.whatsapp_number.branch,
@@ -1318,7 +1318,7 @@ def send_outbound_whatsapp_text_message(conversation, text_body, actor):
         DOCSTRING: Send Outbound WhatsApp Text Message
 
         Description:
-        - Execute the complete CentralChat outbound plain-text WhatsApp message workflow.
+        - Execute the complete Dialoqo outbound plain-text WhatsApp message workflow.
         - Validate the monitored conversation.
         - Send the message through Meta WhatsApp Cloud API.
         - Persist Meta's message identifier and the local outbound message representation.

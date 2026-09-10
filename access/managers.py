@@ -8,7 +8,7 @@ class AccessUserManager(DjangoUserManager):
     DOCSTRING: Access User Manager
 
     Description:
-    - Provide CentralChat-specific user creation behavior.
+    - Provide Dialoqo-specific user creation behavior.
 
     Notes:
     - Django superusers are automatically assigned the SUPERADMINISTRATOR role.
@@ -19,7 +19,7 @@ class AccessUserManager(DjangoUserManager):
         DOCSTRING: Create Superuser
 
         Description:
-        - Create a Django superuser with the CentralChat SUPERADMINISTRATOR role.
+        - Create a Django superuser with the Dialoqo SUPERADMINISTRATOR role.
 
         Notes:
         - The SUPER_ADMINISTRATOR role is assigned automatically.

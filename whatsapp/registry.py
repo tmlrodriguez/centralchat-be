@@ -25,7 +25,7 @@ class MESSAGE_TYPE_REGISTRY(models.TextChoices):
         DOCSTRING: Message Type Registry
 
         Description:
-        - Define the normalized WhatsApp message types supported by CentralChat.
+        - Define the normalized WhatsApp message types supported by Dialoqo.
         - Provide stable internal values independently from the raw Meta webhook payload structure.
 
         Notes:
@@ -38,7 +38,7 @@ class MESSAGE_TYPE_REGISTRY(models.TextChoices):
         - REACTION represents emoji reactions associated with WhatsApp messages.
         - BUTTON represents button response messages.
         - ORDER represents commerce-related order messages.
-        - UNSUPPORTED preserves messages whose Meta type is not yet explicitly supported by CentralChat.
+        - UNSUPPORTED preserves messages whose Meta type is not yet explicitly supported by Dialoqo.
         - Registry values are persisted directly in the Message model.
     """
 
@@ -67,7 +67,7 @@ class MESSAGE_STATUS_REGISTRY(models.TextChoices):
         - Represent inbound reception state and outbound Meta delivery progression.
 
         Notes:
-        - RECEIVED represents an inbound message successfully received and persisted by CentralChat.
+        - RECEIVED represents an inbound message successfully received and persisted by Dialoqo.
         - PENDING represents an outbound message created locally before Meta confirms transmission.
         - SENT represents an outbound message accepted and reported as sent by Meta.
         - DELIVERED represents an outbound message delivered to the recipient.
@@ -95,7 +95,7 @@ class MEDIA_STORAGE_STATUS_REGISTRY(models.TextChoices):
 
         Notes:
         - PENDING represents media metadata that has been persisted but whose binary has not yet been stored.
-        - STORED represents media whose binary content is available in CentralChat private storage.
+        - STORED represents media whose binary content is available in Dialoqo private storage.
         - FAILED represents a media retrieval or validation attempt that could not be completed successfully.
         - A FAILED attachment may be retried because Meta media retrieval failures can be temporary.
         - Registry values are persisted directly in the MediaAttachment model.
@@ -121,7 +121,7 @@ class MESSAGE_TEMPLATE_STATUS_REGISTRY(models.TextChoices):
         - PAUSED and DISABLED templates are unavailable for new outbound delivery.
         - PENDING_DELETION represents templates awaiting permanent deletion.
         - IN_APPEAL represents templates whose rejection or restriction is under appeal.
-        - UNKNOWN preserves Meta states not yet explicitly mapped by CentralChat.
+        - UNKNOWN preserves Meta states not yet explicitly mapped by Dialoqo.
     """
 
     APPROVED = "APPROVED", "Approved"
@@ -139,13 +139,13 @@ class MESSAGE_TEMPLATE_CATEGORY_REGISTRY(models.TextChoices):
         DOCSTRING: Message Template Category Registry
 
         Description:
-        - Define the WhatsApp template categories supported by CentralChat.
+        - Define the WhatsApp template categories supported by Dialoqo.
 
         Notes:
         - MARKETING represents promotional and engagement communication.
         - UTILITY represents transactional and operational communication.
         - AUTHENTICATION represents identity-verification communication.
-        - UNKNOWN preserves categories not yet explicitly supported by CentralChat.
+        - UNKNOWN preserves categories not yet explicitly supported by Dialoqo.
     """
 
     MARKETING = "MARKETING", "Marketing"
@@ -164,7 +164,7 @@ class MESSAGE_TEMPLATE_PARAMETER_FORMAT_REGISTRY(models.TextChoices):
         Notes:
         - POSITIONAL templates use placeholders such as {{1}}, {{2}}, and {{3}}.
         - NAMED templates use named placeholders supplied by Meta.
-        - The format is persisted so CentralChat can validate outbound template parameters before calling Meta.
+        - The format is persisted so Dialoqo can validate outbound template parameters before calling Meta.
     """
 
     POSITIONAL = "POSITIONAL", "Positional"
@@ -176,7 +176,7 @@ class REALTIME_EVENT_REGISTRY(models.TextChoices):
         DOCSTRING: Realtime Event Registry
 
         Description:
-        - Define the stable realtime event names emitted by the CentralChat WhatsApp backend.
+        - Define the stable realtime event names emitted by the Dialoqo WhatsApp backend.
         - Provide a consistent contract between backend WebSocket publishers and frontend consumers.
 
         Notes:

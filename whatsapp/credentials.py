@@ -17,7 +17,7 @@ def get_meta_credentials(credential_reference):
         - Production environments should replace this provider with a dedicated secret-management service.
     """
 
-    secrets_payload = os.environ.get("CENTRALCHAT_META_SECRETS")
+    secrets_payload = os.environ.get("Dialoqo_META_SECRETS")
 
     if not secrets_payload:
         raise ImproperlyConfigured("Configuración de Meta rechazada: el almacén de credenciales no se encuentra configurado.")

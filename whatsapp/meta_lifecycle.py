@@ -31,12 +31,12 @@ class MetaLifecycleClient:
         DOCSTRING: Meta Lifecycle Client
 
         Description:
-        - Provide Meta Graph API operations required to validate and synchronize the CentralChat integration lifecycle.
+        - Provide Meta Graph API operations required to validate and synchronize the Dialoqo integration lifecycle.
 
         Notes:
         - Credentials are resolved from the secure credential store.
         - Access tokens are never persisted in database records.
-        - All requests use the Graph API version configured by CentralChat.
+        - All requests use the Graph API version configured by Dialoqo.
         - Lifecycle operations remain independent from message-send and template-management operations.
     """
 
@@ -49,7 +49,7 @@ class MetaLifecycleClient:
         if not self.access_token:
             raise ImproperlyConfigured("Configuración de Meta rechazada: el access token no se encuentra configurado.")
 
-        self.graph_api_version = getattr(settings, "CENTRALCHAT_META_GRAPH_API_VERSION", "v26.0")
+        self.graph_api_version = getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v26.0")
         self.base_url = f"https://graph.facebook.com/{self.graph_api_version}"
 
     def _request(self, method, resource_path, params=None, json_payload=None):
@@ -78,7 +78,7 @@ class MetaLifecycleClient:
                 },
                 params=params,
                 json=json_payload,
-                timeout=settings.CENTRALCHAT_META_REQUEST_TIMEOUT,
+                timeout=settings.Dialoqo_META_REQUEST_TIMEOUT,
             )
         except requests.RequestException as error:
             raise MetaLifecycleAPIError("Meta no pudo ser contactado durante la validación de la integración.") from error

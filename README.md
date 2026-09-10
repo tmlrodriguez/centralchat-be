@@ -1,1 +1,1 @@
-# centralchat-be
+# dialoqo

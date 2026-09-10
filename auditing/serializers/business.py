@@ -10,7 +10,7 @@ class AuditEventSerializer(serializers.ModelSerializer):
         DOCSTRING: Audit Event Serializer
 
         Description:
-        - Provide the detailed read-only representation of an immutable CentralChat audit event.
+        - Provide the detailed read-only representation of an immutable Dialoqo audit event.
 
         Notes:
         - Audit events cannot be created, updated, or deleted through this serializer.

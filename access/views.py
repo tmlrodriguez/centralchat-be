@@ -19,7 +19,7 @@ class LoginView(APIView):
         DOCSTRING: Login View
 
         Description:
-        - Authenticate a CentralChat user and return a REST Framework authentication token.
+        - Authenticate a Dialoqo user and return a REST Framework authentication token.
 
         Notes:
         - The endpoint is publicly accessible.
@@ -57,7 +57,7 @@ class LogoutView(APIView):
         DOCSTRING: Logout View
 
         Description:
-        - Terminate the authenticated CentralChat token session.
+        - Terminate the authenticated Dialoqo token session.
 
         Notes:
         - Logout deletes the current authentication token.
@@ -82,7 +82,7 @@ class CurrentUserView(APIView):
         DOCSTRING: Current User View
 
         Description:
-        - Return the currently authenticated CentralChat user.
+        - Return the currently authenticated Dialoqo user.
 
         Notes:
         - A valid REST Framework authentication token is required.
@@ -97,7 +97,6 @@ class CurrentUserView(APIView):
         success_message = "Usuario autenticado recuperado correctamente."
         response_data = self.snapshot_serializer(request.user).data
         response_payload = {"success_message": success_message, "data": response_data}
-
         return Response(response_payload, status=HTTP_200_OK)
 
 

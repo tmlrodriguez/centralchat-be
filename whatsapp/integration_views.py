@@ -17,7 +17,7 @@ def build_lifecycle_error_response(error, error_message):
         DOCSTRING: Build Lifecycle Error Response
 
         Description:
-        - Convert lifecycle validation exceptions into the standard CentralChat API response shape.
+        - Convert lifecycle validation exceptions into the standard Dialoqo API response shape.
     """
 
     if isinstance(error, ValidationError):

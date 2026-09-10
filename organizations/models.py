@@ -10,7 +10,7 @@ class Company(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Company
 
         Description:
-        - Represent a company registered in CentralChat.
+        - Represent a company registered in Dialoqo.
         - Establish the primary organizational and tenant boundary for company-owned data.
 
         Notes:
@@ -39,7 +39,7 @@ class Branch(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Branch
 
         Description:
-        - Represent an operational branch belonging to a CentralChat company.
+        - Represent an operational branch belonging to a Dialoqo company.
 
         Notes:
         - A branch belongs to exactly one company.
@@ -74,7 +74,7 @@ class UserCompanyAccess(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: User Company Access
 
         Description:
-        - Represent explicit monitoring access granted to a CentralChat user for a company.
+        - Represent explicit monitoring access granted to a Dialoqo user for a company.
         - Preserve company authorization history when access is later revoked.
 
         Notes:

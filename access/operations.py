@@ -6,6 +6,7 @@ from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
 from .models import AccessUser
 from .registry import ROLE_REGISTRY
 
+
 # Define your access operations here.
 
 @transaction.atomic
@@ -14,7 +15,7 @@ def create_administrator(validated_data, actor):
         DOCSTRING: Create Administrator
 
         Description:
-        - Create a CentralChat ADMINISTRATOR user.
+        - Create a Dialoqo ADMINISTRATOR user.
         - Assign the administrative role exclusively through the backend.
         - Preserve the user responsible for creating the administrator.
         - Record the creation through the centralized auditing subsystem.
@@ -36,7 +37,7 @@ def create_administrator(validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ACCESS,
         action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Usuario administrador creado en CentralChat.",
+        description="Usuario administrador creado en Dialoqo.",
         actor=actor,
         target=user,
         metadata={
@@ -52,51 +53,6 @@ def create_administrator(validated_data, actor):
 
     return user
 
-
-@transaction.atomic
-def create_monitor(validated_data, actor):
-    """
-        DOCSTRING: Create Monitor
-
-        Description:
-        - Create a CentralChat MONITOR user.
-        - Assign the monitor role exclusively through the backend.
-        - Preserve the administrator responsible for creating the monitor.
-        - Record the creation through the centralized auditing subsystem.
-
-        Notes:
-        - The client cannot select or override the MONITOR role.
-        - Company access is intentionally not created by this operation.
-        - Monitor company access is managed independently through the organizations subsystem.
-        - Password information must never be included in audit metadata.
-        - The audit event is persisted only after the surrounding transaction commits successfully.
-    """
-
-    user = AccessUser.objects.create_user(
-        role=ROLE_REGISTRY.MONITOR,
-        created_by=actor,
-        updated_by=actor,
-        **validated_data,
-    )
-
-    schedule_audit_event(
-        category=AUDIT_CATEGORY_REGISTRY.ACCESS,
-        action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Usuario monitor creado en CentralChat.",
-        actor=actor,
-        target=user,
-        metadata={
-            "user_id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "role": user.role,
-            "is_active": user.is_active,
-        },
-    )
-
-    return user
 
 @transaction.atomic
 def update_administrator(administrator, validated_data, actor):
@@ -104,7 +60,7 @@ def update_administrator(administrator, validated_data, actor):
         DOCSTRING: Update Administrator
 
         Description:
-        - Apply validated changes to an existing CentralChat ADMINISTRATOR user.
+        - Apply validated changes to an existing Dialoqo ADMINISTRATOR user.
         - Record the administrative user change through the centralized auditing subsystem.
 
         Notes:
@@ -120,14 +76,15 @@ def update_administrator(administrator, validated_data, actor):
     for field, value in validated_data.items():
         setattr(locked_administrator, field, value)
 
-    locked_administrator.save(update_fields=changed_fields)
+    locked_administrator.updated_by = actor
+    locked_administrator.save(update_fields=[*changed_fields, "updated_by", "updated_at"])
 
     current_values = {field: getattr(locked_administrator, field) for field in changed_fields}
 
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ACCESS,
         action=AUDIT_ACTION_REGISTRY.UPDATE,
-        description="Usuario administrador actualizado en CentralChat.",
+        description="Usuario administrador actualizado en Dialoqo.",
         actor=actor,
         target=locked_administrator,
         metadata={
@@ -149,7 +106,7 @@ def deactivate_administrator(administrator, actor):
         DOCSTRING: Deactivate Administrator
 
         Description:
-        - Deactivate an existing CentralChat ADMINISTRATOR without deleting historical information.
+        - Deactivate an existing Dialoqo ADMINISTRATOR without deleting historical information.
         - Terminate any active REST authentication token.
         - Record the lifecycle change through the centralized auditing subsystem.
 
@@ -162,14 +119,15 @@ def deactivate_administrator(administrator, actor):
     locked_administrator = AccessUser.objects.select_for_update().get(id=administrator.id)
 
     locked_administrator.is_active = False
-    locked_administrator.save(update_fields=["is_active"])
+    locked_administrator.updated_by = actor
+    locked_administrator.save(update_fields=["is_active", "updated_by", "updated_at"])
 
     Token.objects.filter(user=locked_administrator).delete()
 
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ACCESS,
         action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-        description="Usuario administrador desactivado en CentralChat.",
+        description="Usuario administrador desactivado en Dialoqo.",
         actor=actor,
         target=locked_administrator,
         metadata={
@@ -189,7 +147,7 @@ def create_monitor(validated_data, actor):
         DOCSTRING: Create Monitor
 
         Description:
-        - Create a CentralChat MONITOR user.
+        - Create a Dialoqo MONITOR user.
         - Assign the monitor role exclusively through the backend.
         - Preserve the administrator responsible for creating the monitor.
         - Record the creation through the centralized auditing subsystem.
@@ -212,7 +170,7 @@ def create_monitor(validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ACCESS,
         action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Usuario monitor creado en CentralChat.",
+        description="Usuario monitor creado en Dialoqo.",
         actor=actor,
         target=user,
         metadata={
@@ -235,7 +193,7 @@ def update_monitor(monitor, validated_data, actor):
         DOCSTRING: Update Monitor
 
         Description:
-        - Apply validated changes to an existing CentralChat MONITOR user.
+        - Apply validated changes to an existing Dialoqo MONITOR user.
         - Record the monitor change through the centralized auditing subsystem.
 
         Notes:
@@ -251,14 +209,15 @@ def update_monitor(monitor, validated_data, actor):
     for field, value in validated_data.items():
         setattr(locked_monitor, field, value)
 
-    locked_monitor.save(update_fields=changed_fields)
+    locked_monitor.updated_by = actor
+    locked_monitor.save(update_fields=[*changed_fields, "updated_by", "updated_at"])
 
     current_values = {field: getattr(locked_monitor, field) for field in changed_fields}
 
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ACCESS,
         action=AUDIT_ACTION_REGISTRY.UPDATE,
-        description="Usuario monitor actualizado en CentralChat.",
+        description="Usuario monitor actualizado en Dialoqo.",
         actor=actor,
         target=locked_monitor,
         metadata={
@@ -280,7 +239,7 @@ def deactivate_monitor(monitor, actor):
         DOCSTRING: Deactivate Monitor
 
         Description:
-        - Deactivate an existing CentralChat MONITOR without deleting historical information.
+        - Deactivate an existing Dialoqo MONITOR without deleting historical information.
         - Terminate any active REST authentication token.
         - Record the lifecycle change through the centralized auditing subsystem.
 
@@ -294,14 +253,15 @@ def deactivate_monitor(monitor, actor):
     locked_monitor = AccessUser.objects.select_for_update().get(id=monitor.id)
 
     locked_monitor.is_active = False
-    locked_monitor.save(update_fields=["is_active"])
+    locked_monitor.updated_by = actor
+    locked_monitor.save(update_fields=["is_active", "updated_by", "updated_at"])
 
     Token.objects.filter(user=locked_monitor).delete()
 
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ACCESS,
         action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-        description="Usuario monitor desactivado en CentralChat.",
+        description="Usuario monitor desactivado en Dialoqo.",
         actor=actor,
         target=locked_monitor,
         metadata={

@@ -10,7 +10,7 @@ class CompanySerializer(serializers.ModelSerializer):
         DOCSTRING: Company Serializer
 
         Description:
-        - Serialize and validate the primary CentralChat company resource.
+        - Serialize and validate the primary Dialoqo company resource.
 
         Notes:
         - Company lifecycle is represented through is_active.
@@ -31,7 +31,7 @@ class BranchSerializer(serializers.ModelSerializer):
         DOCSTRING: Branch Serializer
 
         Description:
-        - Serialize and validate the primary CentralChat branch resource.
+        - Serialize and validate the primary Dialoqo branch resource.
 
         Notes:
         - A branch must belong to an existing active company.
@@ -57,7 +57,7 @@ class UserCompanyAccessSerializer(serializers.ModelSerializer):
         DOCSTRING: User Company Access Serializer
 
         Description:
-        - Serialize and validate monitoring access assigned to a CentralChat user for a company.
+        - Serialize and validate monitoring access assigned to a Dialoqo user for a company.
 
         Notes:
         - Only MONITOR users may receive company monitoring access.

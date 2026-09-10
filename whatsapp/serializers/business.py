@@ -14,7 +14,7 @@ class MetaIntegrationSerializer(serializers.ModelSerializer):
         DOCSTRING: Meta Integration Serializer
 
         Description:
-        - Serialize and validate the Meta application integration configured for a CentralChat company.
+        - Serialize and validate the Meta application integration configured for a Dialoqo company.
 
         Notes:
         - The company is derived from the URL and controlled by the backend.
@@ -270,7 +270,7 @@ class OutboundTextMessageSerializer(serializers.Serializer):
         DOCSTRING: Outbound Text Message Serializer
 
         Description:
-        - Validate a plain-text WhatsApp message submitted by the CentralChat frontend for outbound delivery.
+        - Validate a plain-text WhatsApp message submitted by the Dialoqo frontend for outbound delivery.
 
         Notes:
         - The destination customer is determined from the conversation and cannot be supplied by the client.

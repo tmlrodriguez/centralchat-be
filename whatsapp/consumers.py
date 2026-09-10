@@ -13,7 +13,7 @@ class WhatsAppMonitorConsumer(AsyncJsonWebsocketConsumer):
         DOCSTRING: WhatsApp Monitor Consumer
 
         Description:
-        - Provide the authenticated realtime WebSocket connection used by CentralChat monitors.
+        - Provide the authenticated realtime WebSocket connection used by Dialoqo monitors.
         - Subscribe an authorized monitor to one company-owned WhatsApp number.
         - Forward normalized backend events to the connected frontend.
 

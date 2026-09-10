@@ -15,7 +15,7 @@ def create_company(validated_data, actor):
         DOCSTRING: Create Company
 
         Description:
-        - Create a CentralChat company owned by the authenticated administrative user.
+        - Create a Dialoqo company owned by the authenticated administrative user.
         - Establish the company as a new tenant boundary.
         - Record the creation through the centralized auditing subsystem.
 
@@ -30,7 +30,7 @@ def create_company(validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ORGANIZATION,
         action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Empresa creada en CentralChat.",
+        description="Empresa creada en Dialoqo.",
         actor=actor,
         company=company,
         target=company,
@@ -51,7 +51,7 @@ def update_company(company, validated_data, actor):
         DOCSTRING: Update Company
 
         Description:
-        - Apply validated changes to an existing CentralChat company.
+        - Apply validated changes to an existing Dialoqo company.
         - Record the administrative configuration change through the centralized auditing subsystem.
 
         Notes:
@@ -77,7 +77,7 @@ def update_company(company, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ORGANIZATION,
         action=AUDIT_ACTION_REGISTRY.UPDATE,
-        description="Empresa actualizada en CentralChat.",
+        description="Empresa actualizada en Dialoqo.",
         actor=actor,
         company=locked_company,
         target=locked_company,
@@ -98,7 +98,7 @@ def deactivate_company(company, actor):
         DOCSTRING: Deactivate Company
 
         Description:
-        - Deactivate an existing CentralChat company without deleting historical information.
+        - Deactivate an existing Dialoqo company without deleting historical information.
         - Record the company lifecycle change through the centralized auditing subsystem.
 
         Notes:
@@ -119,7 +119,7 @@ def deactivate_company(company, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ORGANIZATION,
         action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-        description="Empresa desactivada en CentralChat.",
+        description="Empresa desactivada en Dialoqo.",
         actor=actor,
         company=locked_company,
         target=locked_company,
@@ -140,7 +140,7 @@ def create_branch(company, validated_data, actor):
         DOCSTRING: Create Branch
 
         Description:
-        - Create a branch inside an existing CentralChat company.
+        - Create a branch inside an existing Dialoqo company.
         - Preserve the explicit company tenant boundary.
         - Record the branch creation through the centralized auditing subsystem.
 
@@ -158,7 +158,7 @@ def create_branch(company, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ORGANIZATION,
         action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Sucursal creada en CentralChat.",
+        description="Sucursal creada en Dialoqo.",
         actor=actor,
         company=company,
         branch=branch,
@@ -209,7 +209,7 @@ def update_branch(branch, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ORGANIZATION,
         action=AUDIT_ACTION_REGISTRY.UPDATE,
-        description="Sucursal actualizada en CentralChat.",
+        description="Sucursal actualizada en Dialoqo.",
         actor=actor,
         company=locked_branch.company,
         branch=locked_branch,
@@ -232,7 +232,7 @@ def deactivate_branch(branch, actor):
         DOCSTRING: Deactivate Branch
 
         Description:
-        - Deactivate a CentralChat branch without deleting its historical information.
+        - Deactivate a Dialoqo branch without deleting its historical information.
         - Record the lifecycle change through the centralized auditing subsystem.
 
         Notes:
@@ -252,7 +252,7 @@ def deactivate_branch(branch, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.ORGANIZATION,
         action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-        description="Sucursal desactivada en CentralChat.",
+        description="Sucursal desactivada en Dialoqo.",
         actor=actor,
         company=locked_branch.company,
         branch=locked_branch,
@@ -275,7 +275,7 @@ def grant_user_company_access(user, company, actor):
         DOCSTRING: Grant User Company Access
 
         Description:
-        - Grant an active CentralChat MONITOR explicit access to an active company owned by the authenticated administrator.
+        - Grant an active Dialoqo MONITOR explicit access to an active company owned by the authenticated administrator.
         - Preserve company authorization independently from user creation.
         - Record the access grant through the centralized auditing subsystem.
 
