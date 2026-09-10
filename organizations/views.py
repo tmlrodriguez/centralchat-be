@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST
 from rest_framework.views import APIView
-from access.permissions import IsMonitor
+from access.permissions import IsAdministrator, IsMonitor
 from .models import Branch, Company, UserCompanyAccess
 from .operations import create_branch, create_company, deactivate_branch, deactivate_company, grant_user_company_access, revoke_user_company_access, update_branch, update_company
 from .permissions import IsOrganizationAdministrator
@@ -13,6 +13,7 @@ from .serializers.business import BranchSerializer, CompanySerializer, UserCompa
 from .serializers.snapshots import BranchSnapshotSerializer, CompanySnapshotSerializer, UserCompanyAccessSnapshotSerializer
 
 # Define your views here.
+
 
 class CompanyView(APIView):
     """
@@ -217,28 +218,29 @@ class UserCompanyAccessView(APIView):
         DOCSTRING: User Company Access View
 
         Description:
-        - Return company access records associated with active companies created by the authenticated administrative user.
-        - Grant and revoke MONITOR access only for active companies owned by the authenticated user.
+        - Return company access records associated with companies and MONITOR users owned by the authenticated administrator.
+        - Grant and revoke MONITOR access only inside the authenticated administrator ownership boundary.
 
         Notes:
-        - Access records are scoped through company ownership.
-        - Only access records associated with active companies are visible.
-        - Users must not retrieve, grant, or revoke access for companies created by another administrative user.
+        - Only ADMINISTRATOR users may manage monitor-company access.
+        - Companies must belong to the authenticated administrator.
+        - Monitors must have been created by the authenticated administrator.
+        - Foreign access records intentionally behave as nonexistent.
         - Access mutations are delegated to the organization operation layer.
         - Revocation deactivates the access record instead of deleting it.
-        - Grant and revocation operations are recorded by the centralized auditing subsystem.
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsOrganizationAdministrator]
+    permission_classes = [IsAuthenticated, IsAdministrator]
     business_serializer = UserCompanyAccessSerializer
     snapshot_serializer = UserCompanyAccessSnapshotSerializer
 
     def get(self, request, access_id=None):
-        accesses = UserCompanyAccess.objects.select_related("user", "company").filter(company__created_by=request.user, company__is_active=True)
+        accesses = UserCompanyAccess.objects.select_related("user", "company").filter(company__created_by=request.user, user__created_by=request.user, company__is_active=True)
 
         if access_id:
             access = get_object_or_404(accesses, id=access_id)
+
             success_message = "Acceso de empresa extraído correctamente."
             response_data = self.snapshot_serializer(access).data
             response_payload = {"success_message": success_message, "data": response_data}
@@ -265,13 +267,25 @@ class UserCompanyAccessView(APIView):
         user = serializer.validated_data["user"]
 
         if company.created_by_id != request.user.id:
-            error_message = "Asignación de acceso rechazada: la empresa seleccionada no pertenece al usuario autenticado."
+            error_message = "Asignación de acceso rechazada: la empresa seleccionada no pertenece al administrador autenticado."
+            response_payload = {"error_message": error_message, "data": {}}
+
+            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
+
+        if user.created_by_id != request.user.id:
+            error_message = "Asignación de acceso rechazada: el monitor seleccionado no pertenece al administrador autenticado."
             response_payload = {"error_message": error_message, "data": {}}
 
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
 
         if not company.is_active:
             error_message = "Asignación de acceso rechazada: la empresa seleccionada se encuentra inactiva."
+            response_payload = {"error_message": error_message, "data": {}}
+
+            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
+
+        if not user.is_active:
+            error_message = "Asignación de acceso rechazada: el monitor seleccionado se encuentra inactivo."
             response_payload = {"error_message": error_message, "data": {}}
 
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
@@ -291,7 +305,7 @@ class UserCompanyAccessView(APIView):
         return Response(response_payload, status=HTTP_201_CREATED)
 
     def delete(self, request, access_id):
-        access = get_object_or_404(UserCompanyAccess.objects.select_related("user", "company"), id=access_id, company__created_by=request.user, company__is_active=True, is_active=True)
+        access = get_object_or_404(UserCompanyAccess.objects.select_related("user", "company"), id=access_id, company__created_by=request.user, user__created_by=request.user, company__is_active=True, is_active=True)
 
         try:
             access = revoke_user_company_access(access=access, actor=request.user)

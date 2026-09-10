@@ -1,14 +1,13 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-
+from access.registry import ROLE_REGISTRY
 from auditing.operations import schedule_audit_event
 from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
-
 from .models import Branch, Company, UserCompanyAccess
 
-
 # Define your organization operations here.
+
 
 @transaction.atomic
 def create_company(validated_data, actor):
@@ -276,16 +275,32 @@ def grant_user_company_access(user, company, actor):
         DOCSTRING: Grant User Company Access
 
         Description:
-        - Grant an active CentralChat MONITOR explicit access to an active company.
+        - Grant an active CentralChat MONITOR explicit access to an active company owned by the authenticated administrator.
         - Preserve company authorization independently from user creation.
         - Record the access grant through the centralized auditing subsystem.
 
         Notes:
-        - User-role validation remains enforced by the serializer before this operation.
+        - The user must be an active MONITOR.
+        - The monitor must have been created by the authenticated administrator.
+        - The company must have been created by the authenticated administrator.
         - Only one active access record may exist for the same user and company.
         - Revoked historical access records remain preserved.
-        - The audit event identifies the affected monitor and company.
     """
+
+    if user.role != ROLE_REGISTRY.MONITOR:
+        raise ValidationError({"user": "Asignación de acceso rechazada: el usuario debe tener el rol MONITOR."})
+
+    if not user.is_active:
+        raise ValidationError({"user": "Asignación de acceso rechazada: el monitor seleccionado se encuentra inactivo."})
+
+    if user.created_by_id != actor.id:
+        raise ValidationError({"user": "Asignación de acceso rechazada: el monitor seleccionado no pertenece al administrador autenticado."})
+
+    if not company.is_active:
+        raise ValidationError({"company": "Asignación de acceso rechazada: la empresa seleccionada se encuentra inactiva."})
+
+    if company.created_by_id != actor.id:
+        raise ValidationError({"company": "Asignación de acceso rechazada: la empresa seleccionada no pertenece al administrador autenticado."})
 
     if UserCompanyAccess.objects.filter(user=user, company=company, is_active=True).exists():
         raise ValidationError({"access": "Asignación de acceso rechazada: el usuario ya tiene acceso activo a esta empresa."})
@@ -319,16 +334,23 @@ def revoke_user_company_access(access, actor):
         DOCSTRING: Revoke User Company Access
 
         Description:
-        - Revoke an active monitor-company authorization without deleting the historical access record.
+        - Revoke an active monitor-company authorization owned by the authenticated administrator.
+        - Preserve the historical access record.
         - Record the authorization change through the centralized auditing subsystem.
 
         Notes:
+        - The monitor and company must belong to the authenticated administrator.
         - Revoked access records remain available for historical traceability.
-        - The operation is rejected when the access record is already inactive.
         - Access revocation immediately removes the monitor's authorization for the company.
     """
 
     locked_access = UserCompanyAccess.objects.select_for_update().select_related("user", "company").get(id=access.id)
+
+    if locked_access.company.created_by_id != actor.id:
+        raise ValidationError({"company": "Revocación de acceso rechazada: la empresa no pertenece al administrador autenticado."})
+
+    if locked_access.user.created_by_id != actor.id:
+        raise ValidationError({"user": "Revocación de acceso rechazada: el monitor no pertenece al administrador autenticado."})
 
     if not locked_access.is_active:
         raise ValidationError({"access": "Revocación de acceso rechazada: el acceso ya se encuentra inactivo."})
