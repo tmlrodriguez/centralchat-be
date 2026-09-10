@@ -28,7 +28,11 @@ def process_whatsapp_webhook_task(self, meta_integration_id, payload):
         - Database failures are automatically retried using exponential backoff.
         - Realtime events continue to be emitted through transaction.on_commit after database persistence succeeds.
     """
-
+    logger.info(
+        "WhatsApp webhook payload for integration %s: %s",
+        meta_integration_id,
+        payload,
+    )
     integration = MetaIntegration.objects.select_related("company").filter(id=meta_integration_id, company__is_active=True, is_active=True).first()
 
     if integration is None:

@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN
 from rest_framework.views import APIView
 from access.permissions import IsMonitor
+from organizations.models import Branch, Company, UserCompanyAccess
 from auditing.operations import schedule_audit_event
 from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
 from organizations.permissions import IsOrganizationAdministrator
@@ -24,6 +25,7 @@ from .pagination import ConversationPagination, MessagePagination
 from .resolvers import resolve_administrative_company, resolve_company_branch, resolve_company_meta_integration, resolve_company_whatsapp_business_account, resolve_company_whatsapp_number, resolve_conversation_message, resolve_message_media_attachment, resolve_user_company_access, resolve_whatsapp_number_assignment, resolve_whatsapp_number_conversation
 from .serializers.business import ConversationSerializer, MediaAttachmentSerializer, MessageSerializer, MetaIntegrationSerializer, NumberAssignmentSerializer, OutboundTextMessageSerializer, WhatsAppBusinessAccountSerializer, WhatsAppNumberSerializer
 from .serializers.snapshots import ConversationReadStateSnapshotSerializer, ConversationSnapshotSerializer, MediaAttachmentSnapshotSerializer, MetaIntegrationSnapshotSerializer, NumberAssignmentSnapshotSerializer, WhatsAppBusinessAccountSnapshotSerializer, WhatsAppNumberSnapshotSerializer
+from .serializers.monitoring import MonitoringCompanySerializer
 from .tasks import process_whatsapp_webhook_task
 
 # Define your views here.
@@ -620,6 +622,110 @@ class WhatsAppMonitoringView(APIView):
         }
 
         return Response(response_payload, status=HTTP_200_OK)
+
+
+class MonitoringContextView(APIView):
+    """
+        DOCSTRING: Monitoring Context View
+
+        Description:
+        - Return the complete monitoring context available to the authenticated MONITOR user.
+        - Provide authorized companies, active branches, and operational WhatsApp numbers.
+        - Supply the hierarchical context required by the CentralChat monitoring frontend.
+
+        Notes:
+        - Only MONITOR users may access this endpoint.
+        - Companies are restricted through active CompanyAccess records belonging to the authenticated user.
+        - Only active companies are returned.
+        - Only active branches containing at least one operational WhatsApp number are returned.
+        - Only active, connected, and monitoring-enabled WhatsApp numbers are returned.
+        - Company authorization is evaluated before organizational and WhatsApp resources are exposed.
+        - This operation is read-only and does not generate audit events.
+    """
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsMonitor]
+    serializer_class = MonitoringCompanySerializer
+
+    def get(self, request):
+        company_accesses = UserCompanyAccess.objects.select_related(
+            "company",
+        ).filter(
+            user=request.user,
+            is_active=True,
+            company__is_active=True,
+        )
+
+        authorized_company_ids = company_accesses.values_list(
+            "company_id",
+            flat=True,
+        )
+
+        monitoring_numbers = WhatsAppNumber.objects.select_related(
+            "company",
+            "branch",
+            "whatsapp_business_account",
+        ).filter(
+            company_id__in=authorized_company_ids,
+            company__is_active=True,
+            branch__is_active=True,
+            whatsapp_business_account__is_active=True,
+            is_active=True,
+            is_connected=True,
+            is_monitoring_enabled=True,
+        ).order_by(
+            "display_name",
+            "id",
+        )
+
+        monitoring_branches = Branch.objects.filter(
+            company_id__in=authorized_company_ids,
+            company__is_active=True,
+            is_active=True,
+            whatsapp_numbers__is_active=True,
+            whatsapp_numbers__is_connected=True,
+            whatsapp_numbers__is_monitoring_enabled=True,
+        ).distinct().order_by(
+            "name",
+            "id",
+        ).prefetch_related(
+            Prefetch(
+                "whatsapp_numbers",
+                queryset=monitoring_numbers,
+                to_attr="monitoring_numbers",
+            )
+        )
+
+        companies = Company.objects.filter(
+            id__in=authorized_company_ids,
+            is_active=True,
+            branches__is_active=True,
+            branches__whatsapp_numbers__is_active=True,
+            branches__whatsapp_numbers__is_connected=True,
+            branches__whatsapp_numbers__is_monitoring_enabled=True,
+        ).distinct().order_by(
+            "name",
+            "id",
+        ).prefetch_related(
+            Prefetch(
+                "branches",
+                queryset=monitoring_branches,
+                to_attr="monitoring_branches",
+            )
+        )
+
+        response_payload = {
+            "success_message": "Contexto de monitoreo extraído correctamente.",
+            "data": self.serializer_class(
+                companies,
+                many=True,
+            ).data,
+        }
+
+        return Response(
+            response_payload,
+            status=HTTP_200_OK,
+        )
 
 
 class NumberAssignmentView(APIView):

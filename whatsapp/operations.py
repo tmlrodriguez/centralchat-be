@@ -320,75 +320,53 @@ def mark_conversation_as_read(conversation, user):
         DOCSTRING: Mark Conversation As Read
 
         Description:
-        - Mark a monitored conversation as read for a specific monitoring user.
-        - Reset the user's unread message counter.
-        - Record the most recent persisted message acknowledged by the user.
-        - Publish the new read state after successful transaction commit.
-        - Record the conversation opening and read acknowledgement in the centralized audit subsystem.
+        - Mark a monitored WhatsApp conversation as read for a specific monitoring user.
+        - Reset the authenticated user's unread counter.
+        - Preserve the most recent message acknowledged by the monitoring user.
 
         Notes:
-        - Read state is maintained independently for every monitoring user.
-        - The conversation is locked before the read state is changed.
-        - The same conversation lock is also used during unread increments.
-        - Marking a conversation as read never modifies another monitoring user's state.
-        - Realtime read-state events are delivered only to the corresponding user's private group.
-        - Audit metadata does not include WhatsApp message content.
+        - Read state belongs independently to each monitoring user.
+        - The conversation row is locked to obtain a consistent latest-message reference.
+        - The ConversationReadState row is locked independently when it already exists.
+        - Nullable message relationships are not included in SELECT FOR UPDATE joins.
     """
 
-    locked_conversation = Conversation.objects.select_for_update().select_related("last_message", "whatsapp_number__company", "whatsapp_number__branch").get(id=conversation.id)
-    opened_at = timezone.now()
+    locked_conversation = Conversation.objects.select_for_update().get(
+        id=conversation.id
+    )
 
-    read_state = ConversationReadState.objects.select_for_update().filter(conversation=locked_conversation, user=user).first()
-    previous_unread_count = read_state.unread_count if read_state else 0
-    previous_last_opened_at = read_state.last_opened_at if read_state else None
+    last_message = locked_conversation.last_message
+
+    read_state = ConversationReadState.objects.select_for_update().filter(
+        conversation=locked_conversation,
+        user=user,
+    ).first()
 
     if read_state is None:
-        try:
-            read_state = ConversationReadState.objects.create(
-                conversation=locked_conversation,
-                user=user,
-                is_read=True,
-                unread_count=0,
-                last_read_message=locked_conversation.last_message,
-                last_opened_at=opened_at,
-            )
-
-        except IntegrityError:
-            read_state = ConversationReadState.objects.select_for_update().get(conversation=locked_conversation, user=user)
-            previous_unread_count = read_state.unread_count
-            previous_last_opened_at = read_state.last_opened_at
-            read_state.is_read = True
-            read_state.unread_count = 0
-            read_state.last_read_message = locked_conversation.last_message
-            read_state.last_opened_at = opened_at
-            read_state.save(update_fields=["is_read", "unread_count", "last_read_message", "last_opened_at", "updated_at"])
+        read_state = ConversationReadState.objects.create(
+            conversation=locked_conversation,
+            user=user,
+            is_read=True,
+            unread_count=0,
+            last_read_message=last_message,
+            last_opened_at=timezone.now(),
+        )
 
     else:
         read_state.is_read = True
         read_state.unread_count = 0
-        read_state.last_read_message = locked_conversation.last_message
-        read_state.last_opened_at = opened_at
-        read_state.save(update_fields=["is_read", "unread_count", "last_read_message", "last_opened_at", "updated_at"])
+        read_state.last_read_message = last_message
+        read_state.last_opened_at = timezone.now()
 
-    schedule_conversation_read_state_changed_event(read_state=read_state)
-
-    schedule_audit_event(
-        category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
-        action=AUDIT_ACTION_REGISTRY.READ,
-        description="Conversación de WhatsApp abierta y marcada como leída.",
-        actor=user,
-        company=locked_conversation.whatsapp_number.company,
-        branch=locked_conversation.whatsapp_number.branch,
-        target=locked_conversation,
-        metadata={
-            "conversation_id": locked_conversation.id,
-            "whatsapp_number_id": locked_conversation.whatsapp_number_id,
-            "previous_unread_count": previous_unread_count,
-            "last_read_message_id": locked_conversation.last_message_id,
-            "previous_last_opened_at": previous_last_opened_at.isoformat() if previous_last_opened_at else None,
-            "last_opened_at": opened_at.isoformat(),
-        },
-    )
+        read_state.save(
+            update_fields=[
+                "is_read",
+                "unread_count",
+                "last_read_message",
+                "last_opened_at",
+                "updated_at",
+            ]
+        )
 
     return read_state
 

@@ -2,8 +2,7 @@ from django.urls import path
 from .integration_views import MetaIntegrationValidationView, WhatsAppBusinessAccountConnectionView, WhatsAppNumberValidationView
 from .media_views import MediaAttachmentContentView
 from .template_views import AvailableMessageTemplateView, ConversationTemplateSendView, MessageTemplateSyncView, MessageTemplateView, NewConversationTemplateSendView
-from .views import ConversationReadView, ConversationView, MediaAttachmentView, MessageView, MetaIntegrationView, MetaWebhookView, NumberAssignmentView, OutboundMessageView, WhatsAppBusinessAccountView, WhatsAppMonitoringView, WhatsAppNumberView
-
+from .views import ConversationReadView, ConversationView, MediaAttachmentView, MessageView, MetaIntegrationView, MetaWebhookView, MonitoringContextView, NumberAssignmentView, OutboundMessageView, WhatsAppBusinessAccountView, WhatsAppMonitoringView, WhatsAppNumberView
 # Define your urls here.
 
 app_name = "whatsapp"
@@ -26,6 +25,7 @@ urlpatterns = [
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/templates/send/", NewConversationTemplateSendView.as_view(), name="template-new-conversation-send"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/assignments/", NumberAssignmentView.as_view(), name="assignment-list-create"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/assignments/<int:assignment_id>/", NumberAssignmentView.as_view(), name="assignment-detail"),
+    path("monitoring/context/", MonitoringContextView.as_view(), name="monitoring-context"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/conversations/", ConversationView.as_view(), name="conversation-list"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/conversations/<int:conversation_id>/", ConversationView.as_view(), name="conversation-detail"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/conversations/<int:conversation_id>/read/", ConversationReadView.as_view(), name="conversation-read"),
