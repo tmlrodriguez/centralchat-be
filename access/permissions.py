@@ -1,18 +1,21 @@
 from rest_framework.permissions import BasePermission
+
 from .registry import ROLE_REGISTRY
+
 
 # Define your permissions here.
 
+
 class IsSuperAdministrator(BasePermission):
     """
-    DOCSTRING: Is Super Administrator Permission
+        DOCSTRING: Is Super Administrator Permission
 
-    Description:
-    - Restrict access to authenticated and active SUPERADMINISTRATOR users.
+        Description:
+        - Restrict access to authenticated and active SUPERADMINISTRATOR users.
 
-    Notes:
-    - This permission is intended for platform-level administrative functionality.
-    - It must not be used to authorize monitored conversation content.
+        Notes:
+        - This permission is intended for platform-level administrative functionality.
+        - It must not be used to authorize monitored conversation content.
     """
 
     message = "Access rejected: super administrator permission is required."
@@ -23,14 +26,14 @@ class IsSuperAdministrator(BasePermission):
 
 class IsAdministrator(BasePermission):
     """
-    DOCSTRING: Is Administrator Permission
+        DOCSTRING: Is Administrator Permission
 
-    Description:
-    - Restrict access to authenticated and active ADMINISTRATOR users.
+        Description:
+        - Restrict access to authenticated and active ADMINISTRATOR users.
 
-    Notes:
-    - This permission is intended for administrative functionality.
-    - It must not be used to authorize monitored conversation content.
+        Notes:
+        - This permission is intended for administrative functionality.
+        - It must not be used to authorize monitored conversation content.
     """
 
     message = "Access rejected: administrator permission is required."
@@ -41,17 +44,36 @@ class IsAdministrator(BasePermission):
 
 class IsMonitor(BasePermission):
     """
-    DOCSTRING: Is Monitor Permission
+        DOCSTRING: Is Monitor Permission
 
-    Description:
-    - Restrict access to authenticated and active MONITOR users.
+        Description:
+        - Restrict access to authenticated and active MONITOR users.
 
-    Notes:
-    - Monitor role alone does not grant access to every company.
-    - Company-level authorization must be enforced separately.
+        Notes:
+        - Monitor role alone does not grant access to every company.
+        - Company-level authorization must be enforced separately.
     """
 
     message = "Access rejected: monitor permission is required."
 
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.is_active and request.user.role == ROLE_REGISTRY.MONITOR
+
+
+class IsMember(BasePermission):
+    """
+        DOCSTRING: Is Member Permission
+
+        Description:
+        - Restrict access to authenticated and active MEMBER users.
+
+        Notes:
+        - MEMBER represents an authenticated application user.
+        - Business-resource authorization must be enforced independently.
+        - MEMBER role alone does not grant company or conversation access.
+    """
+
+    message = "Access rejected: member permission is required."
+
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_active and request.user.role == ROLE_REGISTRY.MEMBER
