@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST
 from rest_framework.views import APIView
 from .models import AccessUser
-from .operations import create_administrator, create_monitor, deactivate_administrator, deactivate_monitor, update_administrator, update_monitor
+from .operations import create_administrator, create_member, create_monitor, deactivate_administrator, deactivate_member, deactivate_monitor, update_administrator, update_member, update_monitor
 from .permissions import IsAdministrator, IsSuperAdministrator
 from .registry import ROLE_REGISTRY
 from .serializers.business import AccessUserSerializer, LoginSerializer
@@ -288,6 +288,103 @@ class MonitorView(APIView):
 
         success_message = "Monitor desactivado correctamente."
         response_data = self.business_serializer(monitor).data
+        response_payload = {"success_message": success_message, "data": response_data}
+
+        return Response(response_payload, status=HTTP_200_OK)
+
+
+class MemberUserView(APIView):
+    """
+        DOCSTRING: Member User View
+
+        Description:
+        - Allow an ADMINISTRATOR user to manage MEMBER users created by that administrator.
+        - Return, create, partially update, and deactivate member user records.
+
+        Notes:
+        - The MEMBER role is controlled exclusively by the backend.
+        - Member users are scoped through created_by.
+        - Foreign member user identifiers behave as nonexistent.
+        - Business-resource access remains managed independently.
+        - Password changes are not supported through this endpoint.
+        - Member mutations are delegated to the access operation layer.
+        - Member user records are deactivated instead of destructively deleted.
+    """
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsAdministrator]
+    business_serializer = AccessUserSerializer
+    snapshot_serializer = AccessUserSnapshotSerializer
+
+    def get(self, request, user_id=None):
+        members = AccessUser.objects.filter(role=ROLE_REGISTRY.MEMBER, created_by=request.user, is_active=True).order_by("first_name", "last_name", "username")
+
+        if user_id:
+            member = get_object_or_404(members, id=user_id)
+
+            success_message = "Miembro extraído correctamente."
+            response_data = self.business_serializer(member).data
+            response_payload = {"success_message": success_message, "data": response_data}
+
+            return Response(response_payload, status=HTTP_200_OK)
+
+        success_message = "Miembros extraídos correctamente."
+        response_data = self.snapshot_serializer(members, many=True).data
+        response_payload = {"success_message": success_message, "data": response_data}
+
+        return Response(response_payload, status=HTTP_200_OK)
+
+    def post(self, request):
+        serializer = self.business_serializer(data=request.data)
+
+        if not serializer.is_valid():
+            error_message = "Creación de miembro rechazada: los datos proporcionados no son válidos."
+            response_data = serializer.errors
+            response_payload = {"error_message": error_message, "data": response_data}
+
+            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
+
+        member = create_member(validated_data=serializer.validated_data, actor=request.user)
+
+        success_message = "Miembro creado correctamente."
+        response_data = self.business_serializer(member).data
+        response_payload = {"success_message": success_message, "data": response_data}
+
+        return Response(response_payload, status=HTTP_201_CREATED)
+
+    def patch(self, request, user_id):
+        member = get_object_or_404(AccessUser, id=user_id, role=ROLE_REGISTRY.MEMBER, created_by=request.user, is_active=True)
+
+        if "password" in request.data:
+            error_message = "Actualización de miembro rechazada: la contraseña no puede modificarse mediante este endpoint."
+            response_data = {"password": "Utilice la operación específica de cambio de contraseña."}
+            response_payload = {"error_message": error_message, "data": response_data}
+
+            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
+
+        serializer = self.business_serializer(member, data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            error_message = "Actualización de miembro rechazada: los datos proporcionados no son válidos."
+            response_data = serializer.errors
+            response_payload = {"error_message": error_message, "data": response_data}
+
+            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
+
+        member = update_member(member=member, validated_data=serializer.validated_data, actor=request.user)
+
+        success_message = "Miembro actualizado correctamente."
+        response_data = self.business_serializer(member).data
+        response_payload = {"success_message": success_message, "data": response_data}
+
+        return Response(response_payload, status=HTTP_200_OK)
+
+    def delete(self, request, user_id):
+        member = get_object_or_404(AccessUser, id=user_id, role=ROLE_REGISTRY.MEMBER, created_by=request.user, is_active=True)
+        member = deactivate_member(member=member, actor=request.user)
+
+        success_message = "Miembro desactivado correctamente."
+        response_data = self.business_serializer(member).data
         response_payload = {"success_message": success_message, "data": response_data}
 
         return Response(response_payload, status=HTTP_200_OK)

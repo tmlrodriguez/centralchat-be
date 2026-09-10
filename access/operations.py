@@ -273,3 +273,131 @@ def deactivate_monitor(monitor, actor):
     )
 
     return locked_monitor
+
+
+@transaction.atomic
+def create_member(validated_data, actor):
+    """
+        DOCSTRING: Create Member
+
+        Description:
+        - Create a Dialoqo MEMBER user.
+        - Assign the member role exclusively through the backend.
+        - Preserve the administrator responsible for creating the member.
+        - Record the creation through the centralized auditing subsystem.
+
+        Notes:
+        - The client cannot select or override the MEMBER role.
+        - Company or business-resource access is intentionally not created by this operation.
+        - Password information must never be included in audit metadata.
+        - The audit event is persisted only after the surrounding transaction commits successfully.
+    """
+
+    user = AccessUser.objects.create_user(role=ROLE_REGISTRY.MEMBER, created_by=actor, updated_by=actor, **validated_data)
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.ACCESS,
+        action=AUDIT_ACTION_REGISTRY.CREATE,
+        description="Usuario miembro creado en Dialoqo.",
+        actor=actor,
+        target=user,
+        metadata={
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role,
+            "is_active": user.is_active,
+        },
+    )
+
+    return user
+
+
+@transaction.atomic
+def update_member(member, validated_data, actor):
+    """
+        DOCSTRING: Update Member
+
+        Description:
+        - Apply validated changes to an existing Dialoqo MEMBER user.
+        - Record the member change through the centralized auditing subsystem.
+
+        Notes:
+        - The user role and ownership relationship cannot be changed through this operation.
+        - Password changes are intentionally handled separately.
+        - Existing business-resource relationships remain unchanged.
+    """
+
+    locked_member = AccessUser.objects.select_for_update().get(id=member.id)
+    changed_fields = list(validated_data.keys())
+    previous_values = {field: getattr(locked_member, field) for field in changed_fields}
+
+    for field, value in validated_data.items():
+        setattr(locked_member, field, value)
+
+    locked_member.updated_by = actor
+    locked_member.save(update_fields=[*changed_fields, "updated_by", "updated_at"])
+
+    current_values = {field: getattr(locked_member, field) for field in changed_fields}
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.ACCESS,
+        action=AUDIT_ACTION_REGISTRY.UPDATE,
+        description="Usuario miembro actualizado en Dialoqo.",
+        actor=actor,
+        target=locked_member,
+        metadata={
+            "user_id": locked_member.id,
+            "username": locked_member.username,
+            "role": locked_member.role,
+            "changed_fields": changed_fields,
+            "previous_values": previous_values,
+            "current_values": current_values,
+        },
+    )
+
+    return locked_member
+
+
+@transaction.atomic
+def deactivate_member(member, actor):
+    """
+        DOCSTRING: Deactivate Member
+
+        Description:
+        - Deactivate an existing Dialoqo MEMBER without deleting historical information.
+        - Terminate any active REST authentication token.
+        - Record the lifecycle change through the centralized auditing subsystem.
+
+        Notes:
+        - Member user records are never destructively deleted.
+        - Existing historical references remain preserved.
+        - An inactive member cannot authenticate.
+        - Authentication tokens are revoked immediately after deactivation.
+    """
+
+    locked_member = AccessUser.objects.select_for_update().get(id=member.id)
+
+    locked_member.is_active = False
+    locked_member.updated_by = actor
+    locked_member.save(update_fields=["is_active", "updated_by", "updated_at"])
+
+    Token.objects.filter(user=locked_member).delete()
+
+    schedule_audit_event(
+        category=AUDIT_CATEGORY_REGISTRY.ACCESS,
+        action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
+        description="Usuario miembro desactivado en Dialoqo.",
+        actor=actor,
+        target=locked_member,
+        metadata={
+            "user_id": locked_member.id,
+            "username": locked_member.username,
+            "role": locked_member.role,
+            "is_active": locked_member.is_active,
+        },
+    )
+
+    return locked_member
