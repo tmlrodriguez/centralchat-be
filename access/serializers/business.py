@@ -10,7 +10,7 @@ class AccessUserSerializer(serializers.ModelSerializer):
     DOCSTRING: User Serializer
 
     Description:
-    - Serialize and validate the primary CentralChat user resource.
+    - Serialize and validate the primary Dialoqo user resource.
     - Validate user information used when creating application users.
 
     Notes:
@@ -36,7 +36,7 @@ class LoginSerializer(serializers.Serializer):
     DOCSTRING: Login Serializer
 
     Description:
-    - Validate credentials supplied to authenticate a CentralChat user.
+    - Validate credentials supplied to authenticate a Dialoqo user.
 
     Notes:
     - Authentication uses Django's configured authentication backend.

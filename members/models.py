@@ -9,7 +9,7 @@ class Position(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Position
 
         Description:
-        - Represent an operational position available to members within a CentralChat company.
+        - Represent an operational position available to members within a Dialoqo company.
         - Provide a reusable company-scoped position definition for member records.
 
         Notes:
@@ -46,7 +46,7 @@ class Member(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Member
 
         Description:
-        - Represent a company member registered in CentralChat.
+        - Represent a company member registered in Dialoqo.
         - Associate the member with a company, branch, and operational position.
 
         Notes:

@@ -75,11 +75,11 @@ def get_meta_media_metadata(meta_media_id, access_token):
         - Non-successful Meta responses are converted into controlled MetaMediaError exceptions.
     """
 
-    graph_api_version = getattr(settings, "CENTRALCHAT_META_GRAPH_API_VERSION", "v24.0")
+    graph_api_version = getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v24.0")
     request_url = f"https://graph.facebook.com/{graph_api_version}/{meta_media_id}"
 
     try:
-        response = requests.get(request_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.CENTRALCHAT_META_MEDIA_REQUEST_TIMEOUT)
+        response = requests.get(request_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.Dialoqo_META_MEDIA_REQUEST_TIMEOUT)
     except requests.RequestException as error:
         raise MetaMediaError("Obtención de medio rechazada: no fue posible consultar los metadatos del archivo en Meta.") from error
 
@@ -120,7 +120,7 @@ def download_meta_media(media_url, access_token, maximum_size):
     """
 
     try:
-        response = requests.get(media_url, headers={"Authorization": f"Bearer {access_token}"}, stream=True, timeout=settings.CENTRALCHAT_META_MEDIA_REQUEST_TIMEOUT)
+        response = requests.get(media_url, headers={"Authorization": f"Bearer {access_token}"}, stream=True, timeout=settings.Dialoqo_META_MEDIA_REQUEST_TIMEOUT)
     except requests.RequestException as error:
         raise MetaMediaError("Descarga de medio rechazada: no fue posible descargar el archivo desde Meta.") from error
 
@@ -128,7 +128,7 @@ def download_meta_media(media_url, access_token, maximum_size):
         response.close()
         raise MetaMediaError("Descarga de medio rechazada: Meta no permitió descargar el archivo.")
 
-    temporary_file = settings.CENTRALCHAT_META_MEDIA_TEMPORARY_FILE_CLASS(max_size=settings.CENTRALCHAT_META_MEDIA_MEMORY_THRESHOLD, mode="w+b")
+    temporary_file = settings.Dialoqo_META_MEDIA_TEMPORARY_FILE_CLASS(max_size=settings.Dialoqo_META_MEDIA_MEMORY_THRESHOLD, mode="w+b")
     checksum = hashlib.sha256()
     size = 0
 
@@ -161,7 +161,7 @@ def validate_media_metadata(attachment, metadata):
         DOCSTRING: Validate Media Metadata
 
         Description:
-        - Validate Meta media metadata against the CentralChat attachment record and configured media limits.
+        - Validate Meta media metadata against the Dialoqo attachment record and configured media limits.
 
         Notes:
         - The Meta media identifier must match the attachment identifier.
@@ -180,7 +180,7 @@ def validate_media_metadata(attachment, metadata):
         except (TypeError, ValueError) as error:
             raise MetaMediaError("Obtención de medio rechazada: Meta devolvió un tamaño de archivo inválido.") from error
 
-        if file_size > settings.CENTRALCHAT_META_MEDIA_MAX_SIZE:
+        if file_size > settings.Dialoqo_META_MEDIA_MAX_SIZE:
             raise MetaMediaError("Obtención de medio rechazada: el archivo excede el tamaño máximo permitido.")
 
 
@@ -214,7 +214,7 @@ def store_media_attachment(attachment):
         DOCSTRING: Store Media Attachment
 
         Description:
-        - Retrieve a WhatsApp media binary from Meta and persist it in CentralChat private storage.
+        - Retrieve a WhatsApp media binary from Meta and persist it in Dialoqo private storage.
         - Validate Meta metadata, file-size limits, and SHA-256 integrity before marking the attachment as stored.
 
         Notes:
@@ -244,7 +244,7 @@ def store_media_attachment(attachment):
         temporary_file, size, checksum = download_meta_media(
             media_url=metadata["url"],
             access_token=credentials["access_token"],
-            maximum_size=settings.CENTRALCHAT_META_MEDIA_MAX_SIZE,
+            maximum_size=settings.Dialoqo_META_MEDIA_MAX_SIZE,
         )
 
         try:

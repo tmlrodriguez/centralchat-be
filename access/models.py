@@ -10,9 +10,9 @@ class AccessUser(AbstractUser):
         DOCSTRING: AccessUser
 
         Description:
-        - Represent an authenticated CentralChat user.
+        - Represent an authenticated Dialoqo user.
         - Store the application role assigned to the user.
-        - Preserve which CentralChat user created and last updated the account.
+        - Preserve which Dialoqo user created and last updated the account.
 
         Notes:
         - SUPERADMINISTRATOR users may create ADMINISTRATOR users.

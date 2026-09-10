@@ -15,7 +15,7 @@ class MetaIntegration(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Meta Integration
 
         Description:
-        - Represent the Meta application configuration used by a CentralChat company.
+        - Represent the Meta application configuration used by a Dialoqo company.
         - Provide the company-specific integration context required for webhook validation and Meta API operations.
 
         Notes:
@@ -58,7 +58,7 @@ class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: WhatsApp Business Account
 
         Description:
-        - Represent a Meta WhatsApp Business Account configured in CentralChat.
+        - Represent a Meta WhatsApp Business Account configured in Dialoqo.
         - Group one or more corporate WhatsApp numbers under the corresponding company and Meta integration.
 
         Notes:
@@ -99,7 +99,7 @@ class WhatsAppMessageTemplate(TemporalMixin, LifeCycleMixin, AuthorMixin):
         Description:
         - Represent a WhatsApp message template belonging to a configured WhatsApp Business Account.
         - Persist the latest template definition synchronized from Meta.
-        - Provide the authoritative local template configuration used by CentralChat outbound messaging.
+        - Provide the authoritative local template configuration used by Dialoqo outbound messaging.
 
         Notes:
         - A template belongs to exactly one WhatsApp Business Account.
@@ -153,7 +153,7 @@ class WhatsAppNumber(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: WhatsApp Number
 
         Description:
-        - Represent a corporate WhatsApp number registered in CentralChat.
+        - Represent a corporate WhatsApp number registered in Dialoqo.
         - Associate the number with its company, branch, and WhatsApp Business Account.
 
         Notes:
@@ -321,7 +321,7 @@ class Message(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Message
 
         Description:
-        - Represent a monitored WhatsApp message persisted by CentralChat.
+        - Represent a monitored WhatsApp message persisted by Dialoqo.
         - Store normalized message information independently from the raw Meta webhook payload.
         - Maintain delivery, editing, revocation, structured content, and message-context information.
 

@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document defines the required docstring standard for the CentralChat project.
+This document defines the required docstring standard for the Dialoqo project.
 
 Docstrings must clearly communicate the responsibility, behavior, constraints, and architectural intent of the code element they document. They are part of the project's maintainability standard and must be written consistently across the backend.
 
-CentralChat does not use source-code comments for implementation explanation. Code must rely on clear naming, small responsibilities, explicit architecture, and properly structured docstrings.
+Dialoqo does not use source-code comments for implementation explanation. Code must rely on clear naming, small responsibilities, explicit architecture, and properly structured docstrings.
 
 ## Required Docstring Structure
 
@@ -130,7 +130,7 @@ class WhatsAppNumber(models.Model):
     DOCSTRING: WhatsApp Number
 
     Description:
-    - Represent a corporate WhatsApp number registered in CentralChat.
+    - Represent a corporate WhatsApp number registered in Dialoqo.
     - Associate the number with its company, branch, and WhatsApp Business Account.
 
     Notes:
@@ -383,7 +383,7 @@ class UnknownWhatsAppNumberError(Exception):
 
 ## Source-Code Comments
 
-CentralChat does not use source-code comments for implementation explanation.
+Dialoqo does not use source-code comments for implementation explanation.
 
 Do not write:
 

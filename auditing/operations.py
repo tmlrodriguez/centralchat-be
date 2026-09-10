@@ -126,7 +126,7 @@ def record_audit_event(
         DOCSTRING: Record Audit Event
 
         Description:
-        - Persist one immutable CentralChat audit event.
+        - Persist one immutable Dialoqo audit event.
 
         Notes:
         - Request metadata is automatically resolved from the current auditing context when explicit values are not supplied.

@@ -14,7 +14,7 @@ def validate_phone_number_identity(whatsapp_number, meta_phone_data):
         DOCSTRING: Validate Phone Number Identity
 
         Description:
-        - Validate that the phone number returned by Meta matches the corporate number configured in CentralChat.
+        - Validate that the phone number returned by Meta matches the corporate number configured in Dialoqo.
 
         Notes:
         - Comparison ignores formatting characters and leading plus signs.
@@ -221,7 +221,7 @@ def refresh_whatsapp_business_account_state(whatsapp_business_account, actor, au
         Notes:
         - is_connected reflects successful WABA access.
         - is_webhook_configured reflects whether the configured Meta app is actually subscribed to the WABA.
-        - Every active CentralChat WhatsApp number belonging to the WABA is independently validated.
+        - Every active Dialoqo WhatsApp number belonging to the WABA is independently validated.
         - Internal number validation does not generate individual audit events during a WABA refresh.
         - audit_event may be disabled when this operation is executed as part of a broader connection workflow.
     """

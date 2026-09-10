@@ -8,7 +8,7 @@ class AccessUserSnapshotSerializer(serializers.ModelSerializer):
         DOCSTRING: User Snapshot Serializer
 
         Description:
-        - Provide a compact read-only representation of a CentralChat user.
+        - Provide a compact read-only representation of a Dialoqo user.
 
         Notes:
         - This serializer is intended for nested representations and lightweight references.

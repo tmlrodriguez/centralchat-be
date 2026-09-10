@@ -8,7 +8,7 @@ class TemporalMixin(models.Model):
     DOCSTRING: Temporal Mixin
 
     Description:
-    - Provide standard creation and modification timestamps for CentralChat models.
+    - Provide standard creation and modification timestamps for Dialoqo models.
 
     Notes:
     - created_at is assigned automatically when the record is created.
@@ -27,7 +27,7 @@ class LifeCycleMixin(models.Model):
     DOCSTRING: Life Cycle Mixin
 
     Description:
-    - Provide the standard active lifecycle state for CentralChat models.
+    - Provide the standard active lifecycle state for Dialoqo models.
 
     Notes:
     - Records should normally be deactivated instead of destructively deleted when historical integrity matters.
@@ -44,7 +44,7 @@ class AuthorMixin(models.Model):
     DOCSTRING: Author Mixin
 
     Description:
-    - Record the CentralChat users responsible for creating and last updating a model record.
+    - Record the Dialoqo users responsible for creating and last updating a model record.
 
     Notes:
     - Author relationships are nullable to support migrations, system processes, and records created without an authenticated actor.

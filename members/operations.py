@@ -15,7 +15,7 @@ def create_position(company, validated_data, actor):
         DOCSTRING: Create Position
 
         Description:
-        - Create an operational position inside a CentralChat company.
+        - Create an operational position inside a Dialoqo company.
         - Preserve the explicit company tenant boundary.
         - Record the position creation through the centralized auditing subsystem.
 
@@ -31,7 +31,7 @@ def create_position(company, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.MEMBER,
         action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Posición creada en CentralChat.",
+        description="Posición creada en Dialoqo.",
         actor=actor,
         company=company,
         target=position,
@@ -54,7 +54,7 @@ def update_position(position, validated_data, actor):
         DOCSTRING: Update Position
 
         Description:
-        - Apply validated changes to an existing CentralChat position.
+        - Apply validated changes to an existing Dialoqo position.
         - Preserve the position inside its existing company tenant.
         - Record the configuration change through the centralized auditing subsystem.
 
@@ -88,7 +88,7 @@ def update_position(position, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.MEMBER,
         action=AUDIT_ACTION_REGISTRY.UPDATE,
-        description="Posición actualizada en CentralChat.",
+        description="Posición actualizada en Dialoqo.",
         actor=actor,
         company=locked_position.company,
         target=locked_position,
@@ -131,7 +131,7 @@ def deactivate_position(position, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.MEMBER,
         action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-        description="Posición desactivada en CentralChat.",
+        description="Posición desactivada en Dialoqo.",
         actor=actor,
         company=locked_position.company,
         target=locked_position,
@@ -153,7 +153,7 @@ def create_member(company, validated_data, actor):
         DOCSTRING: Create Member
 
         Description:
-        - Create an operational company member inside CentralChat.
+        - Create an operational company member inside Dialoqo.
         - Associate the member with an active company branch and position.
         - Record the member creation through the centralized auditing subsystem.
 
@@ -169,7 +169,7 @@ def create_member(company, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.MEMBER,
         action=AUDIT_ACTION_REGISTRY.CREATE,
-        description="Miembro creado en CentralChat.",
+        description="Miembro creado en Dialoqo.",
         actor=actor,
         company=company,
         branch=member.branch,
@@ -196,7 +196,7 @@ def update_member(member, validated_data, actor):
         DOCSTRING: Update Member
 
         Description:
-        - Apply validated changes to an existing CentralChat member.
+        - Apply validated changes to an existing Dialoqo member.
         - Preserve the member inside the existing company tenant.
         - Record the operational change through the centralized auditing subsystem.
 
@@ -239,7 +239,7 @@ def update_member(member, validated_data, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.MEMBER,
         action=AUDIT_ACTION_REGISTRY.UPDATE,
-        description="Miembro actualizado en CentralChat.",
+        description="Miembro actualizado en Dialoqo.",
         actor=actor,
         company=locked_member.company,
         branch=locked_member.branch,
@@ -262,7 +262,7 @@ def deactivate_member(member, actor):
         DOCSTRING: Deactivate Member
 
         Description:
-        - Deactivate a CentralChat member without deleting historical operational information.
+        - Deactivate a Dialoqo member without deleting historical operational information.
         - Record the member lifecycle change through the centralized auditing subsystem.
 
         Notes:
@@ -283,7 +283,7 @@ def deactivate_member(member, actor):
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.MEMBER,
         action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-        description="Miembro desactivado en CentralChat.",
+        description="Miembro desactivado en Dialoqo.",
         actor=actor,
         company=locked_member.company,
         branch=locked_member.branch,

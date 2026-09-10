@@ -10,7 +10,7 @@ class PositionSerializer(serializers.ModelSerializer):
         DOCSTRING: Position Serializer
 
         Description:
-        - Serialize and validate the primary CentralChat position resource.
+        - Serialize and validate the primary Dialoqo position resource.
 
         Notes:
         - The company is determined from the URL and controlled exclusively by the backend.
@@ -42,7 +42,7 @@ class MemberSerializer(serializers.ModelSerializer):
         DOCSTRING: Member Serializer
 
         Description:
-        - Serialize and validate the primary CentralChat member resource.
+        - Serialize and validate the primary Dialoqo member resource.
 
         Notes:
         - The company is determined from the URL and controlled exclusively by the backend.

@@ -8,7 +8,7 @@ class AuditEventPagination(PageNumberPagination):
         DOCSTRING: Audit Event Pagination
 
         Description:
-        - Provide page-number pagination for CentralChat audit-event history.
+        - Provide page-number pagination for Dialoqo audit-event history.
         - Return pagination metadata required by administrative audit interfaces.
 
         Notes:

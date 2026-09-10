@@ -68,7 +68,7 @@ def resolve_message_type(meta_message_type):
         DOCSTRING: Resolve Message Type
 
         Description:
-        - Normalize a Meta WhatsApp message type into the CentralChat message type registry.
+        - Normalize a Meta WhatsApp message type into the Dialoqo message type registry.
 
         Notes:
         - Unknown Meta message types are persisted as UNSUPPORTED.
@@ -145,7 +145,7 @@ def extract_message_content(message_data, message_type, meta_message_type):
 
         Description:
         - Build a normalized structured-content representation for a WhatsApp message.
-        - Preserve information required by the CentralChat frontend without storing the complete raw webhook payload.
+        - Preserve information required by the Dialoqo frontend without storing the complete raw webhook payload.
 
         Notes:
         - Structured content is stored in Message.content_data.
@@ -308,7 +308,7 @@ def extract_revocation_event(message_data):
 
         Notes:
         - The parser accepts common revocation and deletion event representations.
-        - Revoked records remain stored in CentralChat and are rendered as deleted messages.
+        - Revoked records remain stored in Dialoqo and are rendered as deleted messages.
         - Non-revocation messages return None.
     """
 
@@ -402,7 +402,7 @@ def extract_failure_details(status_data):
 
         Notes:
         - Meta may return multiple errors.
-        - CentralChat stores the first error as the primary delivery failure reason.
+        - Dialoqo stores the first error as the primary delivery failure reason.
         - Missing error information produces empty values.
     """
 

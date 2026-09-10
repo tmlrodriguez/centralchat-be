@@ -8,7 +8,7 @@ class PositionSnapshotSerializer(serializers.ModelSerializer):
         DOCSTRING: Position Snapshot Serializer
 
         Description:
-        - Provide a compact read-only representation of a CentralChat position.
+        - Provide a compact read-only representation of a Dialoqo position.
 
         Notes:
         - Snapshot serializers must remain read-only.
@@ -26,7 +26,7 @@ class MemberSnapshotSerializer(serializers.ModelSerializer):
         DOCSTRING: Member Snapshot Serializer
 
         Description:
-        - Provide a compact read-only representation of a CentralChat member.
+        - Provide a compact read-only representation of a Dialoqo member.
 
         Notes:
         - Company, branch, and position relationships use their corresponding snapshot serializers.

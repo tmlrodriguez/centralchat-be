@@ -11,7 +11,7 @@ def get_user_from_websocket_token(token_key):
         DOCSTRING: Get User From WebSocket Token
 
         Description:
-        - Resolve an active CentralChat user from a DRF authentication token supplied during WebSocket connection.
+        - Resolve an active Dialoqo user from a DRF authentication token supplied during WebSocket connection.
 
         Notes:
         - Invalid, missing, or inactive-user tokens return AnonymousUser.
@@ -34,7 +34,7 @@ class TokenQueryAuthMiddleware:
         DOCSTRING: Token Query Authentication Middleware
 
         Description:
-        - Authenticate CentralChat WebSocket connections using an existing DRF token.
+        - Authenticate Dialoqo WebSocket connections using an existing DRF token.
 
         Notes:
         - The token is currently supplied through the WebSocket query string as token.

@@ -9,34 +9,35 @@ class CompanySnapshotSerializer(serializers.ModelSerializer):
         DOCSTRING: Company Snapshot Serializer
 
         Description:
-        - Provide a compact read-only representation of a CentralChat company.
+        - Provide a compact read-only representation of a Dialoqo company.
 
         Notes:
         - Snapshot serializers are intended for lightweight and nested representations.
         - Snapshot serializers must remain read-only.
     """
+
     class Meta:
         model = Company
-        fields = ["id", "name", "code", "is_active"]
+        fields = ["id", "name", "code", "description", "is_active"]
         read_only_fields = fields
-
 
 class BranchSnapshotSerializer(serializers.ModelSerializer):
     """
         DOCSTRING: Branch Snapshot Serializer
 
         Description:
-        - Provide a compact read-only representation of a CentralChat branch.
+        - Provide a compact read-only representation of a Dialoqo branch.
 
         Notes:
         - The company relationship is represented through CompanySnapshotSerializer.
         - Snapshot serializers must remain read-only.
     """
+
     company = CompanySnapshotSerializer(read_only=True)
 
     class Meta:
         model = Branch
-        fields = ["id", "company", "name", "code", "is_active"]
+        fields = ["id", "company", "name", "code", "description", "is_active"]
         read_only_fields = fields
 
 

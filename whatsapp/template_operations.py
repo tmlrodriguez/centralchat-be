@@ -17,7 +17,7 @@ def normalize_template_status(value):
         DOCSTRING: Normalize Template Status
 
         Description:
-        - Normalize a Meta template status into the CentralChat registry.
+        - Normalize a Meta template status into the Dialoqo registry.
     """
 
     normalized_value = str(value or "").upper()
@@ -34,7 +34,7 @@ def normalize_template_category(value):
         DOCSTRING: Normalize Template Category
 
         Description:
-        - Normalize a Meta template category into the CentralChat registry.
+        - Normalize a Meta template category into the Dialoqo registry.
     """
 
     normalized_value = str(value or "").upper()
@@ -69,7 +69,7 @@ def synchronize_whatsapp_message_templates(whatsapp_business_account, actor, aud
         DOCSTRING: Synchronize WhatsApp Message Templates
 
         Description:
-        - Synchronize the complete Meta WhatsApp message-template catalog into CentralChat.
+        - Synchronize the complete Meta WhatsApp message-template catalog into Dialoqo.
         - Create templates that do not yet exist locally.
         - Update templates that already exist locally.
         - Mark previously synchronized templates as unavailable when they disappear from Meta.
@@ -301,11 +301,11 @@ def render_template_body_text(whatsapp_message_template, send_components):
         DOCSTRING: Render Template Body Text
 
         Description:
-        - Build a readable CentralChat preview of an outbound template body.
+        - Build a readable Dialoqo preview of an outbound template body.
 
         Notes:
         - Meta remains responsible for final recipient rendering.
-        - This representation is used only for CentralChat conversation history.
+        - This representation is used only for Dialoqo conversation history.
     """
 
     body_component = None
@@ -409,7 +409,7 @@ def persist_outbound_template_message(conversation, whatsapp_message_template, m
         DOCSTRING: Persist Outbound Template Message
 
         Description:
-        - Persist a Meta-accepted outbound template message inside CentralChat.
+        - Persist a Meta-accepted outbound template message inside Dialoqo.
         - Update the corresponding conversation preview.
         - Record the user-initiated template send in the centralized audit subsystem.
 
@@ -477,7 +477,7 @@ def persist_outbound_template_message(conversation, whatsapp_message_template, m
     schedule_audit_event(
         category=AUDIT_CATEGORY_REGISTRY.WHATSAPP,
         action=AUDIT_ACTION_REGISTRY.SEND,
-        description="Plantilla de WhatsApp enviada desde CentralChat.",
+        description="Plantilla de WhatsApp enviada desde Dialoqo.",
         actor=actor,
         company=locked_conversation.whatsapp_number.company,
         branch=locked_conversation.whatsapp_number.branch,
@@ -559,7 +559,7 @@ def send_template_to_new_conversation(whatsapp_number, recipient_phone_number, w
 
         Description:
         - Initiate a business conversation using an approved WhatsApp template.
-        - Send the template to Meta before creating new CentralChat customer or conversation records.
+        - Send the template to Meta before creating new Dialoqo customer or conversation records.
 
         Notes:
         - Failed Meta sends never create empty conversations.

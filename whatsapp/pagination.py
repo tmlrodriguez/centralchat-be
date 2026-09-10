@@ -9,7 +9,7 @@ class ConversationPagination(PageNumberPagination):
 
         Description:
         - Provide page-number pagination for monitored WhatsApp conversation lists.
-        - Return pagination metadata required by the CentralChat frontend.
+        - Return pagination metadata required by the Dialoqo frontend.
 
         Notes:
         - The default page size is optimized for conversation-list rendering.
@@ -30,7 +30,7 @@ class MessagePagination(PageNumberPagination):
 
         Description:
         - Provide page-number pagination for monitored WhatsApp message history.
-        - Return pagination metadata required by the CentralChat conversation viewer.
+        - Return pagination metadata required by the Dialoqo conversation viewer.
 
         Notes:
         - Messages are returned chronologically inside each requested page.

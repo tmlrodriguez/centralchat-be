@@ -7,7 +7,7 @@ class ROLE_REGISTRY(models.TextChoices):
     DOCSTRING: Role Registry
 
     Description:
-    - Define the application roles available to CentralChat users.
+    - Define the application roles available to Dialoqo users.
 
     Notes:
     - SUPERADMINISTRATOR users may create ADMINISTRATOR users.

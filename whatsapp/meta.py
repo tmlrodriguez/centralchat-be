@@ -12,7 +12,7 @@ class MetaWhatsAppAPIError(Exception):
 
         Description:
         - Represent a controlled failure returned while communicating with the Meta WhatsApp Cloud API.
-        - Preserve safe diagnostic information required by the CentralChat operation layer.
+        - Preserve safe diagnostic information required by the Dialoqo operation layer.
 
         Notes:
         - Access tokens and sensitive credentials must never appear in the exception.
@@ -35,13 +35,13 @@ def get_meta_graph_api_version():
         DOCSTRING: Get Meta Graph API Version
 
         Description:
-        - Resolve the Meta Graph API version used by CentralChat.
+        - Resolve the Meta Graph API version used by Dialoqo.
 
         Notes:
         - The version is centralized through Django settings.
     """
 
-    return getattr(settings, "CENTRALCHAT_META_GRAPH_API_VERSION", "v26.0")
+    return getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v26.0")
 
 
 def build_meta_graph_api_url(resource_path):
@@ -264,7 +264,7 @@ def list_meta_whatsapp_message_templates(whatsapp_business_account):
 
         Notes:
         - The WhatsApp Business Account Meta integration supplies the access token.
-        - The default Meta template representation already contains the fields required by CentralChat.
+        - The default Meta template representation already contains the fields required by Dialoqo.
         - Explicit field projection is intentionally avoided because optional template fields may produce Graph API validation failures for some template types.
         - Meta pagination cursors are followed when additional pages are available.
         - Template normalization and persistence remain the responsibility of the synchronization operation.
@@ -337,7 +337,7 @@ def update_meta_whatsapp_message_template(whatsapp_message_template, category=No
 
         Notes:
         - Meta determines whether a template state permits modification.
-        - CentralChat does not locally assume an update succeeded until Meta accepts it.
+        - Dialoqo does not locally assume an update succeeded until Meta accepts it.
     """
 
     payload = {}
