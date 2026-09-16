@@ -77,7 +77,7 @@ def update_administrator(administrator, validated_data, actor):
         setattr(locked_administrator, field, value)
 
     locked_administrator.updated_by = actor
-    locked_administrator.save(update_fields=[*changed_fields, "updated_by", "updated_at"])
+    locked_administrator.save(update_fields=list(dict.fromkeys([*changed_fields, "updated_by"])))
 
     current_values = {field: getattr(locked_administrator, field) for field in changed_fields}
 
@@ -120,7 +120,7 @@ def deactivate_administrator(administrator, actor):
 
     locked_administrator.is_active = False
     locked_administrator.updated_by = actor
-    locked_administrator.save(update_fields=["is_active", "updated_by", "updated_at"])
+    locked_administrator.save(update_fields=["is_active", "updated_by"])
 
     Token.objects.filter(user=locked_administrator).delete()
 
@@ -210,7 +210,7 @@ def update_monitor(monitor, validated_data, actor):
         setattr(locked_monitor, field, value)
 
     locked_monitor.updated_by = actor
-    locked_monitor.save(update_fields=[*changed_fields, "updated_by", "updated_at"])
+    locked_monitor.save(update_fields=list(dict.fromkeys([*changed_fields, "updated_by"])))
 
     current_values = {field: getattr(locked_monitor, field) for field in changed_fields}
 
@@ -254,7 +254,7 @@ def deactivate_monitor(monitor, actor):
 
     locked_monitor.is_active = False
     locked_monitor.updated_by = actor
-    locked_monitor.save(update_fields=["is_active", "updated_by", "updated_at"])
+    locked_monitor.save(update_fields=["is_active", "updated_by"])
 
     Token.objects.filter(user=locked_monitor).delete()
 
@@ -338,7 +338,7 @@ def update_member(member, validated_data, actor):
         setattr(locked_member, field, value)
 
     locked_member.updated_by = actor
-    locked_member.save(update_fields=[*changed_fields, "updated_by", "updated_at"])
+    locked_member.save(update_fields=list(dict.fromkeys([*changed_fields, "updated_by"])))
 
     current_values = {field: getattr(locked_member, field) for field in changed_fields}
 
@@ -382,7 +382,7 @@ def deactivate_member(member, actor):
 
     locked_member.is_active = False
     locked_member.updated_by = actor
-    locked_member.save(update_fields=["is_active", "updated_by", "updated_at"])
+    locked_member.save(update_fields=["is_active", "updated_by"])
 
     Token.objects.filter(user=locked_member).delete()
 

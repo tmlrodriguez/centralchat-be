@@ -1,19 +1,7 @@
 from rest_framework import serializers
-from .snapshots import MetaIntegrationSnapshotSerializer, WhatsAppBusinessAccountSnapshotSerializer, WhatsAppNumberSnapshotSerializer
+from .snapshots import WhatsAppBusinessAccountSnapshotSerializer, WhatsAppNumberSnapshotSerializer
 
 # Define your serializers here.
-
-class MetaIntegrationValidationResultSerializer(serializers.Serializer):
-    """
-        DOCSTRING: Meta Integration Validation Result Serializer
-
-        Description:
-        - Represent the result of validating Meta integration credentials.
-    """
-
-    meta_integration = MetaIntegrationSnapshotSerializer(read_only=True)
-    meta_identity = serializers.JSONField(read_only=True)
-
 
 class WhatsAppNumberValidationResultSerializer(serializers.Serializer):
     """
@@ -35,7 +23,6 @@ class WhatsAppBusinessAccountLifecycleResultSerializer(serializers.Serializer):
         - Represent WABA lifecycle synchronization results.
     """
 
-    meta_integration = MetaIntegrationSnapshotSerializer(read_only=True, required=False)
     whatsapp_business_account = WhatsAppBusinessAccountSnapshotSerializer(read_only=True)
     meta_waba = serializers.JSONField(read_only=True, required=False)
     subscribed_apps = serializers.JSONField(read_only=True)

@@ -6,6 +6,7 @@ from auditing.operations import schedule_audit_event
 from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
 from .meta import create_meta_whatsapp_message_template, delete_meta_whatsapp_message_template, list_meta_whatsapp_message_templates, send_meta_whatsapp_template_message, update_meta_whatsapp_message_template
 from .models import Conversation, Customer, Message, WhatsAppBusinessAccount, WhatsAppMessageTemplate, WhatsAppNumber
+from .operations import validate_member_whatsapp_number_operation
 from .realtime import schedule_conversation_updated_event, schedule_message_created_event
 from .registry import MESSAGE_DIRECTION_REGISTRY, MESSAGE_STATUS_REGISTRY, MESSAGE_TEMPLATE_CATEGORY_REGISTRY, MESSAGE_TEMPLATE_PARAMETER_FORMAT_REGISTRY, MESSAGE_TEMPLATE_STATUS_REGISTRY, MESSAGE_TYPE_REGISTRY
 from .webhook import normalize_phone_number
@@ -86,7 +87,7 @@ def synchronize_whatsapp_message_templates(whatsapp_business_account, actor, aud
         - Template content and parameter values are not copied into audit metadata.
     """
 
-    account = WhatsAppBusinessAccount.objects.select_for_update().select_related("company", "meta_integration").get(id=whatsapp_business_account.id)
+    account = WhatsAppBusinessAccount.objects.select_for_update().select_related("company").get(id=whatsapp_business_account.id)
     meta_templates = list_meta_whatsapp_message_templates(whatsapp_business_account=account)
 
     synchronized_at = timezone.now()
@@ -170,7 +171,6 @@ def synchronize_whatsapp_message_templates(whatsapp_business_account, actor, aud
             target=account,
             metadata={
                 "whatsapp_business_account_id": account.id,
-                "meta_integration_id": account.meta_integration_id,
                 "meta_waba_id": account.meta_waba_id,
                 "created": created_count,
                 "updated": updated_count,
@@ -196,7 +196,7 @@ def validate_template_for_sending(whatsapp_message_template, whatsapp_number):
         - Validate whether a WhatsApp template may be sent from the supplied corporate WhatsApp number.
 
         Notes:
-        - Template, WABA, Meta integration, number, and company must belong to the same tenant.
+        - Template, WABA, number, and company must belong to the same tenant.
         - Only approved, active, Meta-available templates may be sent.
     """
 
@@ -209,9 +209,6 @@ def validate_template_for_sending(whatsapp_message_template, whatsapp_number):
 
     if template_account.company_id != company.id:
         raise ValidationError({"template_id": "Envío de plantilla rechazado: la plantilla pertenece a otra empresa."})
-
-    if template_account.meta_integration.company_id != company.id:
-        raise ValidationError({"template_id": "Envío de plantilla rechazado: la integración asociada a la plantilla pertenece a otra empresa."})
 
     if not whatsapp_message_template.is_active:
         raise ValidationError({"template_id": "Envío de plantilla rechazado: la plantilla se encuentra inactiva."})
@@ -352,26 +349,22 @@ def validate_whatsapp_number_for_template_send(whatsapp_number):
         DOCSTRING: Validate WhatsApp Number For Template Send
 
         Description:
-        - Validate the complete tenant and integration chain required for outbound template messaging.
+        - Validate the complete tenant chain required for outbound template messaging.
 
         Notes:
-        - Company, branch, number, WABA, and Meta integration must form one consistent tenant boundary.
+        - Company, branch, number, and WABA must form one consistent tenant boundary.
         - Cross-company relationships are rejected even if inconsistent database data exists.
     """
 
     company = whatsapp_number.company
     branch = whatsapp_number.branch
     account = whatsapp_number.whatsapp_business_account
-    integration = account.meta_integration
 
     if branch.company_id != company.id:
         raise ValidationError({"branch": "Envío de plantilla rechazado: la sucursal no pertenece a la empresa."})
 
     if account.company_id != company.id:
         raise ValidationError({"whatsapp_business_account": "Envío de plantilla rechazado: la cuenta de WhatsApp Business no pertenece a la empresa."})
-
-    if integration.company_id != company.id:
-        raise ValidationError({"meta_integration": "Envío de plantilla rechazado: la integración de Meta no pertenece a la empresa."})
 
     if not company.is_active:
         raise ValidationError({"company": "Envío de plantilla rechazado: la empresa se encuentra inactiva."})
@@ -393,12 +386,6 @@ def validate_whatsapp_number_for_template_send(whatsapp_number):
 
     if not account.is_webhook_configured:
         raise ValidationError({"whatsapp_business_account": "Envío de plantilla rechazado: el webhook no se encuentra configurado."})
-
-    if not integration.is_active:
-        raise ValidationError({"meta_integration": "Envío de plantilla rechazado: la integración de Meta se encuentra inactiva."})
-
-    if not integration.is_connected:
-        raise ValidationError({"meta_integration": "Envío de plantilla rechazado: la integración de Meta no se encuentra conectada."})
 
     return whatsapp_number
 
@@ -520,11 +507,11 @@ def send_template_to_existing_conversation(conversation, whatsapp_message_templa
         "whatsapp_number__company",
         "whatsapp_number__branch",
         "whatsapp_number__whatsapp_business_account",
-        "whatsapp_number__whatsapp_business_account__meta_integration",
-    ).get(id=conversation.id)
+            ).get(id=conversation.id)
 
     whatsapp_number = conversation.whatsapp_number
 
+    validate_member_whatsapp_number_operation(whatsapp_number=whatsapp_number, actor=actor)
     validate_whatsapp_number_for_template_send(whatsapp_number)
     validate_template_for_sending(whatsapp_message_template, whatsapp_number)
     validate_template_send_components(whatsapp_message_template, send_components)
@@ -568,8 +555,9 @@ def send_template_to_new_conversation(whatsapp_number, recipient_phone_number, w
         - Successful persistence records the corresponding SEND audit event.
     """
 
-    whatsapp_number = WhatsAppNumber.objects.select_related("company", "branch", "whatsapp_business_account", "whatsapp_business_account__meta_integration").get(id=whatsapp_number.id)
+    whatsapp_number = WhatsAppNumber.objects.select_related("company", "branch", "whatsapp_business_account").get(id=whatsapp_number.id)
 
+    validate_member_whatsapp_number_operation(whatsapp_number=whatsapp_number, actor=actor)
     validate_whatsapp_number_for_template_send(whatsapp_number)
     validate_template_for_sending(whatsapp_message_template, whatsapp_number)
     validate_template_send_components(whatsapp_message_template, send_components)

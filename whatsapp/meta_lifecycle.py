@@ -10,7 +10,7 @@ class MetaLifecycleAPIError(Exception):
         DOCSTRING: Meta Lifecycle API Error
 
         Description:
-        - Represent a Meta Graph API failure occurring during integration lifecycle validation.
+        - Represent a Meta Graph API failure occurring during WhatsApp lifecycle validation.
 
         Notes:
         - Sensitive access tokens are never included in the exception.
@@ -31,7 +31,7 @@ class MetaLifecycleClient:
         DOCSTRING: Meta Lifecycle Client
 
         Description:
-        - Provide Meta Graph API operations required to validate and synchronize the Dialoqo integration lifecycle.
+        - Provide Meta Graph API operations required to validate and synchronize WhatsApp resources.
 
         Notes:
         - Credentials are resolved from the secure credential store.
@@ -40,16 +40,14 @@ class MetaLifecycleClient:
         - Lifecycle operations remain independent from message-send and template-management operations.
     """
 
-    def __init__(self, meta_integration):
-        self.meta_integration = meta_integration
-
-        credentials = get_meta_credentials(meta_integration.credential_reference)
+    def __init__(self):
+        credentials = get_meta_credentials()
         self.access_token = credentials.get("access_token")
 
         if not self.access_token:
             raise ImproperlyConfigured("Configuración de Meta rechazada: el access token no se encuentra configurado.")
 
-        self.graph_api_version = getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v26.0")
+        self.graph_api_version = getattr(settings, "DIALOQO_META_GRAPH_API_VERSION", getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v26.0"))
         self.base_url = f"https://graph.facebook.com/{self.graph_api_version}"
 
     def _request(self, method, resource_path, params=None, json_payload=None):
@@ -78,7 +76,7 @@ class MetaLifecycleClient:
                 },
                 params=params,
                 json=json_payload,
-                timeout=settings.Dialoqo_META_REQUEST_TIMEOUT,
+                timeout=getattr(settings, "DIALOQO_META_REQUEST_TIMEOUT", getattr(settings, "Dialoqo_META_REQUEST_TIMEOUT", 20)),
             )
         except requests.RequestException as error:
             raise MetaLifecycleAPIError("Meta no pudo ser contactado durante la validación de la integración.") from error

@@ -4,6 +4,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 from auditing.operations import schedule_audit_event
 from auditing.registry import (AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY)
+from access.registry import ROLE_REGISTRY
 from organizations.models import UserCompanyAccess
 from .meta import MetaWhatsAppAPIError, send_meta_whatsapp_text_message
 from .models import Conversation, ConversationReadState, Customer, MediaAttachment, Message, NumberAssignment, WhatsAppNumber
@@ -28,7 +29,37 @@ def get_current_whatsapp_number_assignment(whatsapp_number):
         - Historical assignments remain preserved independently from the current assignment.
     """
 
-    return NumberAssignment.objects.select_related("member", "member__company", "member__branch", "member__position").filter(whatsapp_number=whatsapp_number, is_active=True).first()
+    return NumberAssignment.objects.select_related("member").filter(whatsapp_number=whatsapp_number, is_active=True).first()
+
+
+def validate_member_whatsapp_number_operation(whatsapp_number, actor):
+    """
+        DOCSTRING: Validate Member WhatsApp Number Operation
+
+        Description:
+        - Validate that the authenticated actor is an active MEMBER currently assigned to the supplied WhatsApp number.
+        - Establish the operational authorization boundary used by outbound messaging actions.
+
+        Notes:
+        - MONITOR and administrative roles are never authorized to send through this operation.
+        - The assignment must remain active and must not have been explicitly closed.
+        - This validation is intentionally repeated inside the operation layer as defense in depth.
+    """
+
+    if actor is None or not actor.is_active or actor.role != ROLE_REGISTRY.MEMBER:
+        raise ValidationError({"member": "Operación rechazada: únicamente un usuario MEMBER activo puede operar el número de WhatsApp."})
+
+    assignment_exists = NumberAssignment.objects.filter(
+        whatsapp_number=whatsapp_number,
+        member=actor,
+        is_active=True,
+        unassigned_at__isnull=True,
+    ).exists()
+
+    if not assignment_exists:
+        raise ValidationError({"member": "Operación rechazada: el número de WhatsApp no se encuentra asignado al usuario autenticado."})
+
+    return True
 
 
 def validate_whatsapp_number_assignment_member(whatsapp_number, member):
@@ -36,23 +67,23 @@ def validate_whatsapp_number_assignment_member(whatsapp_number, member):
         DOCSTRING: Validate WhatsApp Number Assignment Member
 
         Description:
-        - Validate whether a member is eligible to receive assignment of a specific WhatsApp number.
+        - Validate whether a Dialoqo MEMBER user may receive assignment of a specific WhatsApp number.
 
         Notes:
-        - The member must remain active.
-        - The member must belong to the same company as the WhatsApp number.
-        - The member must belong to the same branch as the WhatsApp number.
-        - Validation is performed at the operation layer in addition to serializer validation so assignment invariants cannot be bypassed.
+        - The user must have the MEMBER role.
+        - The user must remain active.
+        - The MEMBER must have been created by the administrator that owns the company.
+        - Validation is repeated at the operation layer so assignment rules cannot be bypassed.
     """
+
+    if member.role != ROLE_REGISTRY.MEMBER:
+        raise ValidationError({"member": "Asignación de número rechazada: el usuario seleccionado debe tener el rol MEMBER."})
 
     if not member.is_active:
         raise ValidationError({"member": "Asignación de número rechazada: el miembro seleccionado se encuentra inactivo."})
 
-    if member.company_id != whatsapp_number.company_id:
-        raise ValidationError({"member": "Asignación de número rechazada: el miembro no pertenece a la misma empresa que el número de WhatsApp."})
-
-    if member.branch_id != whatsapp_number.branch_id:
-        raise ValidationError({"member": "Asignación de número rechazada: el miembro no pertenece a la misma sucursal que el número de WhatsApp."})
+    if member.created_by_id != whatsapp_number.company.created_by_id:
+        raise ValidationError({"member": "Asignación de número rechazada: el miembro seleccionado no pertenece al administrador propietario de la empresa."})
 
     return member
 
@@ -63,7 +94,7 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
         DOCSTRING: Assign WhatsApp Number
 
         Description:
-        - Assign a member to a WhatsApp number.
+        - Assign a Dialoqo MEMBER user to a WhatsApp number.
         - Close the previous active assignment before creating the new assignment.
         - Preserve the complete historical responsibility chain.
         - Publish the new assignment state after successful transaction commit.
@@ -72,7 +103,7 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
         Notes:
         - Assignment history must always remain preserved.
         - The WhatsApp number is locked to serialize concurrent assignment operations.
-        - The member must remain active and belong to the same company and branch as the number.
+        - The assigned user must be an eligible active MEMBER owned by the company administrator.
         - Reassigning the number to the currently assigned member is rejected.
         - Only one active assignment may remain after the transaction completes.
         - Realtime and audit events are never emitted for rolled-back transactions.
@@ -115,6 +146,7 @@ def assign_whatsapp_number(whatsapp_number, member, actor):
             "previous_member_id": previous_member_id,
             "new_assignment_id": assignment.id,
             "new_member_id": member.id,
+            "new_member_username": member.username,
         },
     )
 
@@ -377,16 +409,15 @@ def mark_conversation_as_unread(conversation, message):
         DOCSTRING: Mark Conversation As Unread
 
         Description:
-        - Mark a conversation as unread for every monitoring user with active access to the owning company.
+        - Mark a conversation as unread for every authorized MONITOR and the currently assigned MEMBER.
         - Increment unread counters atomically for a relevant inbound message.
         - Publish each user's resulting read state after successful transaction commit.
 
         Notes:
-        - The supplied message is validated before any unread state is changed.
+        - MONITOR users are resolved through active company-access assignments.
+        - MEMBER users are resolved through the active assignment of the conversation WhatsApp number.
         - Existing unread counters are incremented through database F expressions.
-        - Concurrent creation of the same read-state record is protected by the unique database constraint.
-        - last_read_message is never changed when a new unread message arrives.
-        - Realtime read-state events remain private to the corresponding monitor.
+        - Duplicate users are collapsed before read-state updates are applied.
         - Automatic unread-counter changes are not audit events because they are system-generated message-ingestion state.
     """
 
@@ -395,23 +426,36 @@ def mark_conversation_as_unread(conversation, message):
 
     locked_conversation = Conversation.objects.select_for_update().select_related("whatsapp_number__company").get(id=conversation.id)
 
-    company_accesses = UserCompanyAccess.objects.select_related("user").filter(
-        company=locked_conversation.whatsapp_number.company,
-        is_active=True,
-        user__is_active=True,
-    )
+    monitor_users = [
+        company_access.user
+        for company_access in UserCompanyAccess.objects.select_related("user").filter(
+            company=locked_conversation.whatsapp_number.company,
+            is_active=True,
+            user__is_active=True,
+            user__role=ROLE_REGISTRY.MONITOR,
+        )
+    ]
 
+    member_users = [
+        assignment.member
+        for assignment in NumberAssignment.objects.select_related("member").filter(
+            whatsapp_number=locked_conversation.whatsapp_number,
+            is_active=True,
+            unassigned_at__isnull=True,
+            member__is_active=True,
+            member__role=ROLE_REGISTRY.MEMBER,
+        )
+    ]
+
+    users = {user.id: user for user in [*monitor_users, *member_users]}.values()
     updated_count = 0
 
-    for company_access in company_accesses:
-        user = company_access.user
-
+    for user in users:
         affected_rows = ConversationReadState.objects.filter(conversation=locked_conversation, user=user).update(is_read=False, unread_count=F("unread_count") + 1)
 
         if not affected_rows:
             try:
                 ConversationReadState.objects.create(conversation=locked_conversation, user=user, is_read=False, unread_count=1)
-
             except IntegrityError:
                 ConversationReadState.objects.filter(conversation=locked_conversation, user=user).update(is_read=False, unread_count=F("unread_count") + 1)
 
@@ -474,20 +518,18 @@ def recalculate_conversation_read_state(conversation, user):
     return read_state
 
 
-def resolve_whatsapp_number(meta_integration, meta_phone_number_id):
+def resolve_whatsapp_number(meta_phone_number_id):
     """
         DOCSTRING: Resolve WhatsApp Number
 
         Description:
         - Resolve an active corporate WhatsApp number from a Meta phone-number identifier.
-        - Enforce the complete Meta integration and company tenant boundary.
+        - Resolve tenant ownership from the globally unique Meta Phone Number ID.
 
         Notes:
-        - The number must belong to the same company as the supplied Meta integration.
-        - The WABA must belong to the same company.
-        - The WABA must reference the exact supplied Meta integration.
-        - The associated branch must belong to the same company.
-        - Resources from another company or Meta integration must never be returned.
+        - meta_phone_number_id is globally unique in Dialoqo.
+        - The number, company, branch, WABA, and company Meta connection must all remain active.
+        - Company context is derived from the resolved number rather than from a webhook-specific integration key.
     """
 
     if not meta_phone_number_id:
@@ -498,14 +540,11 @@ def resolve_whatsapp_number(meta_integration, meta_phone_number_id):
         "branch",
         "whatsapp_business_account",
         "whatsapp_business_account__company",
-        "whatsapp_business_account__meta_integration",
-    ).filter(
+            ).filter(
         meta_phone_number_id=meta_phone_number_id,
-        company=meta_integration.company,
-        branch__company=meta_integration.company,
-        whatsapp_business_account__company=meta_integration.company,
-        whatsapp_business_account__meta_integration=meta_integration,
-        whatsapp_business_account__meta_integration__company=meta_integration.company,
+        company__is_active=True,
+        branch__is_active=True,
+        whatsapp_business_account__is_active=True,
         is_active=True,
     ).first()
 
@@ -845,7 +884,7 @@ def revoke_message(meta_message_id, revoked_at):
 
 
 @transaction.atomic
-def persist_whatsapp_single_message(meta_integration, whatsapp_number, metadata, contacts, contact_map, message_data):
+def persist_whatsapp_single_message(whatsapp_number, metadata, contacts, contact_map, message_data):
     """
         DOCSTRING: Persist WhatsApp Single Message
 
@@ -992,7 +1031,7 @@ def persist_whatsapp_single_message(meta_integration, whatsapp_number, metadata,
 
 
 @transaction.atomic
-def persist_whatsapp_message_event(meta_integration, value):
+def persist_whatsapp_message_event(value):
     """
         DOCSTRING: Persist WhatsApp Message Event
 
@@ -1013,7 +1052,7 @@ def persist_whatsapp_message_event(meta_integration, value):
     if not messages:
         return {"created": 0, "updated": 0, "ignored": 0}
 
-    whatsapp_number = resolve_whatsapp_number(meta_integration=meta_integration, meta_phone_number_id=meta_phone_number_id)
+    whatsapp_number = resolve_whatsapp_number(meta_phone_number_id=meta_phone_number_id)
 
     if whatsapp_number is None:
         return {"created": 0, "updated": 0, "ignored": len(messages)}
@@ -1026,7 +1065,6 @@ def persist_whatsapp_message_event(meta_integration, value):
 
     for message_data in messages:
         result = persist_whatsapp_single_message(
-            meta_integration=meta_integration,
             whatsapp_number=whatsapp_number,
             metadata=metadata,
             contacts=contacts,
@@ -1111,7 +1149,7 @@ def persist_whatsapp_status_event(value):
     return {"created": 0, "updated": updated_count, "ignored": ignored_count}
 
 
-def persist_whatsapp_webhook_payload(meta_integration, payload):
+def persist_whatsapp_webhook_payload(payload):
     """
         DOCSTRING: Persist WhatsApp Webhook Payload
 
@@ -1139,7 +1177,7 @@ def persist_whatsapp_webhook_payload(meta_integration, payload):
             value = change.get("value") or {}
 
             if value.get("messages"):
-                result = persist_whatsapp_message_event(meta_integration=meta_integration, value=value)
+                result = persist_whatsapp_message_event(value=value)
 
                 created_count += result["created"]
                 updated_count += result["updated"]
@@ -1163,10 +1201,10 @@ def validate_outbound_whatsapp_conversation(conversation):
         DOCSTRING: Validate Outbound WhatsApp Conversation
 
         Description:
-        - Validate the complete tenant and integration chain required to send an outbound WhatsApp message.
+        - Validate the complete tenant chain required to send an outbound WhatsApp message.
 
         Notes:
-        - Conversation, customer, WhatsApp number, branch, WABA, Meta integration, and company must form one consistent tenant.
+        - Conversation, customer, WhatsApp number, branch, WABA, and company must form one consistent tenant.
         - Cross-company relationships are rejected even if corrupted data somehow exists.
     """
 
@@ -1175,7 +1213,6 @@ def validate_outbound_whatsapp_conversation(conversation):
     company = whatsapp_number.company
     branch = whatsapp_number.branch
     whatsapp_business_account = whatsapp_number.whatsapp_business_account
-    meta_integration = whatsapp_business_account.meta_integration
 
     if not conversation.is_active:
         raise ValidationError({"conversation": "Envío de mensaje rechazado: la conversación se encuentra inactiva."})
@@ -1188,9 +1225,6 @@ def validate_outbound_whatsapp_conversation(conversation):
 
     if whatsapp_business_account.company_id != company.id:
         raise ValidationError({"whatsapp_business_account": "Envío de mensaje rechazado: la cuenta de WhatsApp Business no pertenece a la empresa."})
-
-    if meta_integration.company_id != company.id:
-        raise ValidationError({"meta_integration": "Envío de mensaje rechazado: la integración de Meta no pertenece a la empresa."})
 
     if not customer.is_active:
         raise ValidationError({"customer": "Envío de mensaje rechazado: el cliente se encuentra inactivo."})
@@ -1218,12 +1252,6 @@ def validate_outbound_whatsapp_conversation(conversation):
 
     if not whatsapp_business_account.is_webhook_configured:
         raise ValidationError({"whatsapp_business_account": "Envío de mensaje rechazado: el webhook no se encuentra configurado."})
-
-    if not meta_integration.is_active:
-        raise ValidationError({"meta_integration": "Envío de mensaje rechazado: la integración de Meta se encuentra inactiva."})
-
-    if not meta_integration.is_connected:
-        raise ValidationError({"meta_integration": "Envío de mensaje rechazado: la integración de Meta no se encuentra conectada."})
 
     return conversation
 
@@ -1340,9 +1368,9 @@ def send_outbound_whatsapp_text_message(conversation, text_body, actor):
         "whatsapp_number__company",
         "whatsapp_number__branch",
         "whatsapp_number__whatsapp_business_account",
-        "whatsapp_number__whatsapp_business_account__meta_integration",
     ).get(id=conversation.id)
 
+    validate_member_whatsapp_number_operation(whatsapp_number=conversation.whatsapp_number, actor=actor)
     validate_outbound_whatsapp_conversation(conversation=conversation)
 
     normalized_text_body = str(text_body or "").strip()

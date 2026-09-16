@@ -12,186 +12,24 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN
 from rest_framework.views import APIView
-from access.permissions import IsMonitor
+from access.registry import ROLE_REGISTRY
 from organizations.models import Branch, Company, UserCompanyAccess
 from auditing.operations import schedule_audit_event
 from auditing.registry import AUDIT_ACTION_REGISTRY, AUDIT_CATEGORY_REGISTRY
 from organizations.permissions import IsOrganizationAdministrator
 from .credentials import get_meta_credentials
 from .meta import MetaWhatsAppAPIError
-from .models import Conversation, ConversationReadState, MediaAttachment, Message, MetaIntegration, NumberAssignment, WhatsAppBusinessAccount, WhatsAppNumber
+from .models import Conversation, ConversationReadState, MediaAttachment, Message, NumberAssignment, WhatsAppBusinessAccount, WhatsAppNumber
 from .operations import activate_whatsapp_monitoring, assign_whatsapp_number, deactivate_whatsapp_monitoring, get_current_whatsapp_number_assignment, mark_conversation_as_read, send_outbound_whatsapp_text_message, unassign_whatsapp_number
 from .pagination import ConversationPagination, MessagePagination
-from .resolvers import resolve_administrative_company, resolve_company_branch, resolve_company_meta_integration, resolve_company_whatsapp_business_account, resolve_company_whatsapp_number, resolve_conversation_message, resolve_message_media_attachment, resolve_user_company_access, resolve_whatsapp_number_assignment, resolve_whatsapp_number_conversation
-from .serializers.business import ConversationSerializer, MediaAttachmentSerializer, MessageSerializer, MetaIntegrationSerializer, NumberAssignmentSerializer, OutboundTextMessageSerializer, WhatsAppBusinessAccountSerializer, WhatsAppNumberSerializer
-from .serializers.snapshots import ConversationReadStateSnapshotSerializer, ConversationSnapshotSerializer, MediaAttachmentSnapshotSerializer, MetaIntegrationSnapshotSerializer, NumberAssignmentSnapshotSerializer, WhatsAppBusinessAccountSnapshotSerializer, WhatsAppNumberSnapshotSerializer
+from .permissions import IsMember, IsMonitoringUser
+from .resolvers import resolve_administrative_company, resolve_company_branch, resolve_company_whatsapp_business_account, resolve_company_whatsapp_number, resolve_conversation_message, resolve_message_media_attachment, resolve_monitoring_whatsapp_number, resolve_whatsapp_number_assignment, resolve_whatsapp_number_conversation
+from .serializers.business import ConversationSerializer, MediaAttachmentSerializer, MessageSerializer, NumberAssignmentSerializer, OutboundTextMessageSerializer, WhatsAppBusinessAccountSerializer, WhatsAppNumberSerializer
+from .serializers.snapshots import ConversationReadStateSnapshotSerializer, ConversationSnapshotSerializer, MediaAttachmentSnapshotSerializer, NumberAssignmentSnapshotSerializer, WhatsAppBusinessAccountSnapshotSerializer, WhatsAppNumberSnapshotSerializer
 from .serializers.monitoring import MonitoringCompanySerializer
 from .tasks import process_whatsapp_webhook_task
 
 # Define your views here.
-
-class MetaIntegrationView(APIView):
-    """
-        DOCSTRING: Meta Integration View
-
-        Description:
-        - Return active Meta integrations configured for a specific company.
-        - Create, partially update, and deactivate company-specific Meta integration records.
-        - Record administrative integration mutations through the centralized audit subsystem.
-
-        Notes:
-        - The company must belong to the authenticated administrative user.
-        - Sensitive Meta credentials are maintained externally through credential_reference.
-        - webhook_key is generated exclusively by the backend.
-        - Integration records are deactivated instead of destructively deleted.
-        - All integration resolution remains scoped to the administrative company tenant.
-        - Sensitive credential references are never copied into audit metadata.
-        - Audit records are persisted only after the corresponding database transaction commits successfully.
-    """
-
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsOrganizationAdministrator]
-    business_serializer = MetaIntegrationSerializer
-    snapshot_serializer = MetaIntegrationSnapshotSerializer
-
-    def get(self, request, company_id, integration_id=None):
-        company = resolve_administrative_company(user=request.user, company_id=company_id)
-        integrations = MetaIntegration.objects.filter(company=company, company__is_active=True, is_active=True)
-
-        if integration_id:
-            integration = resolve_company_meta_integration(company=company, integration_id=integration_id)
-
-            response_payload = {
-                "success_message": "Integración de Meta extraída correctamente.",
-                "data": self.business_serializer(integration).data,
-            }
-
-            return Response(response_payload, status=HTTP_200_OK)
-
-        response_payload = {
-            "success_message": "Integraciones de Meta extraídas correctamente.",
-            "data": self.snapshot_serializer(integrations, many=True).data,
-        }
-
-        return Response(response_payload, status=HTTP_200_OK)
-
-    def post(self, request, company_id):
-        company = resolve_administrative_company(user=request.user, company_id=company_id)
-        serializer = self.business_serializer(data=request.data)
-
-        if not serializer.is_valid():
-            response_payload = {
-                "error_message": "Creación de integración de Meta rechazada: los datos proporcionados no son válidos.",
-                "data": serializer.errors,
-            }
-
-            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
-
-        with transaction.atomic():
-            integration = serializer.save(company=company, created_by=request.user, updated_by=request.user)
-
-            schedule_audit_event(
-                category=AUDIT_CATEGORY_REGISTRY.META,
-                action=AUDIT_ACTION_REGISTRY.CREATE,
-                description="Integración de Meta creada en Dialoqo.",
-                actor=request.user,
-                company=company,
-                target=integration,
-                metadata={
-                    "meta_integration_id": integration.id,
-                    "meta_app_id": integration.meta_app_id,
-                    "is_connected": integration.is_connected,
-                    "is_active": integration.is_active,
-                },
-            )
-
-        response_payload = {
-            "success_message": "Integración de Meta creada correctamente.",
-            "data": self.business_serializer(integration).data,
-        }
-
-        return Response(response_payload, status=HTTP_201_CREATED)
-
-    def patch(self, request, company_id, integration_id):
-        company = resolve_administrative_company(user=request.user, company_id=company_id)
-        integration = resolve_company_meta_integration(company=company, integration_id=integration_id)
-        serializer = self.business_serializer(integration, data=request.data, partial=True)
-
-        if not serializer.is_valid():
-            response_payload = {
-                "error_message": "Actualización de integración de Meta rechazada: los datos proporcionados no son válidos.",
-                "data": serializer.errors,
-            }
-
-            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
-
-        changed_fields = list(serializer.validated_data.keys())
-
-        with transaction.atomic():
-            integration = serializer.save(updated_by=request.user)
-
-            schedule_audit_event(
-                category=AUDIT_CATEGORY_REGISTRY.META,
-                action=AUDIT_ACTION_REGISTRY.UPDATE,
-                description="Integración de Meta actualizada en Dialoqo.",
-                actor=request.user,
-                company=company,
-                target=integration,
-                metadata={
-                    "meta_integration_id": integration.id,
-                    "meta_app_id": integration.meta_app_id,
-                    "changed_fields": changed_fields,
-                    "is_connected": integration.is_connected,
-                    "is_active": integration.is_active,
-                },
-            )
-
-        response_payload = {
-            "success_message": "Integración de Meta actualizada correctamente.",
-            "data": self.business_serializer(integration).data,
-        }
-
-        return Response(response_payload, status=HTTP_200_OK)
-
-    def delete(self, request, company_id, integration_id):
-        company = resolve_administrative_company(user=request.user, company_id=company_id)
-        integration = resolve_company_meta_integration(company=company, integration_id=integration_id)
-
-        if integration.whatsapp_business_accounts.filter(company=company, is_active=True).exists():
-            response_payload = {
-                "error_message": "Desactivación de integración rechazada: existen cuentas de WhatsApp Business activas asociadas.",
-                "data": {},
-            }
-
-            return Response(response_payload, status=HTTP_400_BAD_REQUEST)
-
-        with transaction.atomic():
-            integration.is_active = False
-            integration.updated_by = request.user
-            integration.save(update_fields=["is_active", "updated_by", "updated_at"])
-
-            schedule_audit_event(
-                category=AUDIT_CATEGORY_REGISTRY.META,
-                action=AUDIT_ACTION_REGISTRY.DEACTIVATE,
-                description="Integración de Meta desactivada en Dialoqo.",
-                actor=request.user,
-                company=company,
-                target=integration,
-                metadata={
-                    "meta_integration_id": integration.id,
-                    "meta_app_id": integration.meta_app_id,
-                    "is_connected": integration.is_connected,
-                    "is_active": integration.is_active,
-                },
-            )
-
-        response_payload = {
-            "success_message": "Integración de Meta desactivada correctamente.",
-            "data": self.business_serializer(integration).data,
-        }
-
-        return Response(response_payload, status=HTTP_200_OK)
-
 
 class WhatsAppBusinessAccountView(APIView):
     """
@@ -205,7 +43,7 @@ class WhatsAppBusinessAccountView(APIView):
         Notes:
         - The company identifier is required for every operation.
         - The company must belong to the authenticated administrative user.
-        - The associated Meta integration must belong to exactly the same company.
+        - The WABA is scoped directly to the same company.
         - Foreign WABA identifiers are treated as nonexistent.
         - Audit records are persisted only after successful database commit.
     """
@@ -220,10 +58,8 @@ class WhatsAppBusinessAccountView(APIView):
 
         accounts = WhatsAppBusinessAccount.objects.select_related(
             "company",
-            "meta_integration",
         ).filter(
             company=company,
-            meta_integration__company=company,
             is_active=True,
         )
 
@@ -268,7 +104,6 @@ class WhatsAppBusinessAccountView(APIView):
                 target=account,
                 metadata={
                     "whatsapp_business_account_id": account.id,
-                    "meta_integration_id": account.meta_integration_id,
                     "meta_waba_id": account.meta_waba_id,
                     "meta_business_id": account.meta_business_id,
                     "is_connected": account.is_connected,
@@ -298,7 +133,6 @@ class WhatsAppBusinessAccountView(APIView):
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
 
         changed_fields = list(serializer.validated_data.keys())
-        previous_meta_integration_id = account.meta_integration_id
 
         with transaction.atomic():
             account = serializer.save(updated_by=request.user)
@@ -312,8 +146,6 @@ class WhatsAppBusinessAccountView(APIView):
                 target=account,
                 metadata={
                     "whatsapp_business_account_id": account.id,
-                    "previous_meta_integration_id": previous_meta_integration_id,
-                    "current_meta_integration_id": account.meta_integration_id,
                     "meta_waba_id": account.meta_waba_id,
                     "changed_fields": changed_fields,
                     "is_connected": account.is_connected,
@@ -355,7 +187,6 @@ class WhatsAppBusinessAccountView(APIView):
                 target=account,
                 metadata={
                     "whatsapp_business_account_id": account.id,
-                    "meta_integration_id": account.meta_integration_id,
                     "meta_waba_id": account.meta_waba_id,
                     "is_connected": account.is_connected,
                     "is_webhook_configured": account.is_webhook_configured,
@@ -382,7 +213,7 @@ class WhatsAppNumberView(APIView):
 
         Notes:
         - Company and branch identifiers are tenant-scoped.
-        - The associated WABA and Meta integration must remain inside the same company.
+        - The associated WABA must remain inside the same company.
         - Foreign number identifiers are treated as nonexistent.
         - Audit metadata intentionally avoids unnecessary conversation content.
     """
@@ -401,13 +232,11 @@ class WhatsAppNumberView(APIView):
             "branch",
             "whatsapp_business_account",
             "whatsapp_business_account__company",
-            "whatsapp_business_account__meta_integration",
         ).filter(
             company=company,
             branch=branch,
             branch__company=company,
             whatsapp_business_account__company=company,
-            whatsapp_business_account__meta_integration__company=company,
             is_active=True,
         )
 
@@ -629,103 +458,96 @@ class MonitoringContextView(APIView):
         DOCSTRING: Monitoring Context View
 
         Description:
-        - Return the complete monitoring context available to the authenticated MONITOR user.
+        - Return the complete monitoring context available to the authenticated MONITOR or MEMBER user.
         - Provide authorized companies, active branches, and operational WhatsApp numbers.
         - Supply the hierarchical context required by the Dialoqo monitoring frontend.
 
         Notes:
-        - Only MONITOR users may access this endpoint.
-        - Companies are restricted through active CompanyAccess records belonging to the authenticated user.
-        - Only active companies are returned.
-        - Only active branches containing at least one operational WhatsApp number are returned.
-        - Only active, connected, and monitoring-enabled WhatsApp numbers are returned.
-        - Company authorization is evaluated before organizational and WhatsApp resources are exposed.
+        - MONITOR users receive operational numbers through active company-access assignments.
+        - MEMBER users receive only operational numbers currently assigned to them.
+        - Only active companies, branches, WABA accounts, connected numbers, and monitoring-enabled numbers are returned.
         - This operation is read-only and does not generate audit events.
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMonitoringUser]
     serializer_class = MonitoringCompanySerializer
 
     def get(self, request):
-        company_accesses = UserCompanyAccess.objects.select_related(
-            "company",
-        ).filter(
-            user=request.user,
-            is_active=True,
-            company__is_active=True,
-        )
+        if request.user.role == ROLE_REGISTRY.MONITOR:
+            authorized_company_ids = UserCompanyAccess.objects.filter(
+                user=request.user,
+                is_active=True,
+                company__is_active=True,
+            ).values_list("company_id", flat=True)
 
-        authorized_company_ids = company_accesses.values_list(
-            "company_id",
-            flat=True,
-        )
+            monitoring_numbers = WhatsAppNumber.objects.select_related(
+                "company",
+                "branch",
+                "whatsapp_business_account",
+            ).filter(
+                company_id__in=authorized_company_ids,
+                company__is_active=True,
+                branch__is_active=True,
+                whatsapp_business_account__is_active=True,
+                is_active=True,
+                is_connected=True,
+                is_monitoring_enabled=True,
+            ).order_by("display_name", "id")
 
-        monitoring_numbers = WhatsAppNumber.objects.select_related(
-            "company",
-            "branch",
-            "whatsapp_business_account",
-        ).filter(
-            company_id__in=authorized_company_ids,
-            company__is_active=True,
-            branch__is_active=True,
-            whatsapp_business_account__is_active=True,
-            is_active=True,
-            is_connected=True,
-            is_monitoring_enabled=True,
-        ).order_by(
-            "display_name",
-            "id",
-        )
+        else:
+            assigned_number_ids = NumberAssignment.objects.filter(
+                member=request.user,
+                member__is_active=True,
+                is_active=True,
+                unassigned_at__isnull=True,
+                whatsapp_number__company__is_active=True,
+                whatsapp_number__branch__is_active=True,
+                whatsapp_number__whatsapp_business_account__is_active=True,
+                whatsapp_number__is_active=True,
+                whatsapp_number__is_connected=True,
+                whatsapp_number__is_monitoring_enabled=True,
+            ).values_list("whatsapp_number_id", flat=True)
+
+            monitoring_numbers = WhatsAppNumber.objects.select_related(
+                "company",
+                "branch",
+                "whatsapp_business_account",
+            ).filter(
+                id__in=assigned_number_ids,
+                company__is_active=True,
+                branch__is_active=True,
+                whatsapp_business_account__is_active=True,
+                is_active=True,
+                is_connected=True,
+                is_monitoring_enabled=True,
+            ).order_by("display_name", "id")
+
+            authorized_company_ids = monitoring_numbers.values_list("company_id", flat=True)
 
         monitoring_branches = Branch.objects.filter(
             company_id__in=authorized_company_ids,
             company__is_active=True,
             is_active=True,
-            whatsapp_numbers__is_active=True,
-            whatsapp_numbers__is_connected=True,
-            whatsapp_numbers__is_monitoring_enabled=True,
-        ).distinct().order_by(
-            "name",
-            "id",
-        ).prefetch_related(
-            Prefetch(
-                "whatsapp_numbers",
-                queryset=monitoring_numbers,
-                to_attr="monitoring_numbers",
-            )
+            whatsapp_numbers__in=monitoring_numbers,
+        ).distinct().order_by("name", "id").prefetch_related(
+            Prefetch("whatsapp_numbers", queryset=monitoring_numbers, to_attr="monitoring_numbers")
         )
 
         companies = Company.objects.filter(
             id__in=authorized_company_ids,
             is_active=True,
-            branches__is_active=True,
-            branches__whatsapp_numbers__is_active=True,
-            branches__whatsapp_numbers__is_connected=True,
-            branches__whatsapp_numbers__is_monitoring_enabled=True,
-        ).distinct().order_by(
-            "name",
-            "id",
-        ).prefetch_related(
-            Prefetch(
-                "branches",
-                queryset=monitoring_branches,
-                to_attr="monitoring_branches",
-            )
+            branches__in=monitoring_branches,
+        ).distinct().order_by("name", "id").prefetch_related(
+            Prefetch("branches", queryset=monitoring_branches, to_attr="monitoring_branches")
         )
 
         response_payload = {
             "success_message": "Contexto de monitoreo extraído correctamente.",
-            "data": self.serializer_class(
-                companies,
-                many=True,
-            ).data,
+            "data": self.serializer_class(companies, many=True).data,
         }
 
-        return Response(
-            response_payload,
-            status=HTTP_200_OK,
-        )
+        return Response(response_payload, status=HTTP_200_OK)
 
 
 class NumberAssignmentView(APIView):
@@ -734,11 +556,12 @@ class NumberAssignmentView(APIView):
 
         Description:
         - Return current and historical assignments associated with a corporate WhatsApp number.
-        - Assign or reassign the number to an eligible company member.
+        - Assign or reassign the number to an eligible Dialoqo MEMBER user.
         - End the currently active assignment.
 
         Notes:
-        - Company, branch, number, assignment, and member relationships remain tenant-scoped.
+        - Company, branch, and WhatsApp number relationships remain tenant-scoped.
+        - Eligible members are AccessUser records with role MEMBER owned by the same administrator.
         - Historical assignments remain preserved.
         - Assignment lifecycle auditing is implemented inside the operation layer.
     """
@@ -753,18 +576,10 @@ class NumberAssignmentView(APIView):
         branch = resolve_company_branch(company=company, branch_id=branch_id)
         whatsapp_number = resolve_company_whatsapp_number(company=company, branch_id=branch.id, number_id=number_id)
 
-        assignments = NumberAssignment.objects.select_related(
-            "member",
-            "member__company",
-            "member__branch",
-            "member__position",
-        ).filter(
+        assignments = NumberAssignment.objects.select_related("member").filter(
             whatsapp_number=whatsapp_number,
-            member__company=company,
-        ).order_by(
-            "-assigned_at",
-            "-id",
-        )
+            member__created_by=request.user,
+        ).order_by("-assigned_at", "-id")
 
         if assignment_id:
             assignment = resolve_whatsapp_number_assignment(whatsapp_number=whatsapp_number, assignment_id=assignment_id)
@@ -834,7 +649,7 @@ class NumberAssignmentView(APIView):
 
         except ValidationError as error:
             response_payload = {
-                "error_message": "Desasignación rechazada: no fue posible completar la operación.",
+                "error_message": "Desasignación de número rechazada: no fue posible completar la operación.",
                 "data": error.message_dict,
             }
 
@@ -858,22 +673,21 @@ class ConversationView(APIView):
         - Support search, unread filtering, current-member assignment filtering, and explicit ordering.
 
         Notes:
-        - Only MONITOR users may access conversation content.
-        - Company access is resolved first.
-        - The WhatsApp number is then resolved inside that company.
+        - MONITOR and MEMBER users may access conversation content according to their role-specific authorization.
+        - MONITOR users are authorized through company access.
+        - MEMBER users are authorized through the active assignment of the requested WhatsApp number.
         - Conversations are resolved inside that number and company.
         - Foreign conversation identifiers therefore behave as nonexistent.
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMonitoringUser]
     business_serializer = ConversationSerializer
     snapshot_serializer = ConversationSnapshotSerializer
     pagination_class = ConversationPagination
 
     def get(self, request, company_id, branch_id, number_id, conversation_id=None):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
         current_assignment = get_current_whatsapp_number_assignment(whatsapp_number=whatsapp_number)
 
         if conversation_id:
@@ -905,8 +719,8 @@ class ConversationView(APIView):
             ),
         ).filter(
             whatsapp_number=whatsapp_number,
-            whatsapp_number__company=company_access.company,
-            customer__company=company_access.company,
+            whatsapp_number__company=whatsapp_number.company,
+            customer__company=whatsapp_number.company,
             is_active=True,
         )
 
@@ -1011,12 +825,11 @@ class ConversationReadView(APIView):
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMonitoringUser]
     snapshot_serializer = ConversationReadStateSnapshotSerializer
 
     def post(self, request, company_id, branch_id, number_id, conversation_id):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
         conversation = resolve_whatsapp_number_conversation(whatsapp_number=whatsapp_number, conversation_id=conversation_id)
         read_state = mark_conversation_as_read(conversation=conversation, user=request.user)
 
@@ -1042,13 +855,12 @@ class MessageView(APIView):
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMonitoringUser]
     business_serializer = MessageSerializer
     pagination_class = MessagePagination
 
     def get(self, request, company_id, branch_id, number_id, conversation_id, message_id=None):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
         conversation = resolve_whatsapp_number_conversation(whatsapp_number=whatsapp_number, conversation_id=conversation_id)
 
         messages = Message.objects.select_related(
@@ -1059,7 +871,7 @@ class MessageView(APIView):
         ).filter(
             conversation=conversation,
             conversation__whatsapp_number=whatsapp_number,
-            conversation__customer__company=company_access.company,
+            conversation__customer__company=whatsapp_number.company,
             is_active=True,
         )
 
@@ -1111,13 +923,12 @@ class MediaAttachmentView(APIView):
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMonitoringUser]
     business_serializer = MediaAttachmentSerializer
     snapshot_serializer = MediaAttachmentSnapshotSerializer
 
     def get(self, request, company_id, branch_id, number_id, conversation_id, message_id, attachment_id=None):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
         conversation = resolve_whatsapp_number_conversation(whatsapp_number=whatsapp_number, conversation_id=conversation_id)
         message = resolve_conversation_message(conversation=conversation, message_id=message_id)
 
@@ -1150,25 +961,23 @@ class MetaWebhookView(APIView):
         DOCSTRING: Meta Webhook View
 
         Description:
-        - Provide the public webhook endpoint used by Meta for WhatsApp verification and event delivery.
-        - Authenticate Meta requests synchronously.
-        - Queue validated webhook payloads for asynchronous persistence.
+        - Provide the single public webhook endpoint used by the Dialoqo Meta application.
+        - Authenticate Meta requests synchronously using global platform credentials.
+        - Queue validated webhook payloads for asynchronous tenant resolution and persistence.
 
         Notes:
         - This endpoint does not require Dialoqo authentication.
-        - webhook_key identifies the owning Meta integration.
+        - All customer WABAs connected to the Dialoqo Meta application deliver events to this endpoint.
         - GET verification remains synchronous because Meta requires the challenge response.
         - POST signature validation remains synchronous because untrusted payloads must never enter the task broker.
-        - Successfully authenticated POST payloads are queued through Celery.
+        - Company ownership is resolved later from the globally unique Meta Phone Number ID in the payload.
         - Sensitive Meta credentials are never passed to Celery.
-        - The HTTP request returns immediately after successful queue publication.
-        - Routine webhook ingestion is not recorded as a human audit action.
     """
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
-    def get(self, request, webhook_key):
+    def get(self, request):
         mode = request.query_params.get("hub.mode")
         supplied_verify_token = request.query_params.get("hub.verify_token")
         challenge = request.query_params.get("hub.challenge")
@@ -1181,25 +990,15 @@ class MetaWebhookView(APIView):
 
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
 
-        integration = get_object_or_404(
-            MetaIntegration.objects.select_related("company"),
-            webhook_key=webhook_key,
-            company__is_active=True,
-            is_active=True,
-        )
-
         try:
-            credentials = get_meta_credentials(integration.credential_reference)
-
+            credentials = get_meta_credentials()
         except ImproperlyConfigured:
             response_payload = {
-                "error_message": "Verificación de webhook rechazada: la integración de Meta no se encuentra correctamente configurada.",
+                "error_message": "Verificación de webhook rechazada: la configuración global de Meta no se encuentra disponible.",
                 "data": {},
             }
 
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
-
-        expected_verify_token = credentials["verify_token"]
 
         if mode != "subscribe":
             response_payload = {
@@ -1209,7 +1008,7 @@ class MetaWebhookView(APIView):
 
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
 
-        if not secrets.compare_digest(supplied_verify_token, expected_verify_token):
+        if not secrets.compare_digest(supplied_verify_token, credentials["verify_token"]):
             response_payload = {
                 "error_message": "Verificación de webhook rechazada: el token de verificación no es válido.",
                 "data": {},
@@ -1219,20 +1018,12 @@ class MetaWebhookView(APIView):
 
         return HttpResponse(challenge, status=HTTP_200_OK, content_type="text/plain")
 
-    def post(self, request, webhook_key):
-        integration = get_object_or_404(
-            MetaIntegration.objects.select_related("company"),
-            webhook_key=webhook_key,
-            company__is_active=True,
-            is_active=True,
-        )
-
+    def post(self, request):
         try:
-            credentials = get_meta_credentials(integration.credential_reference)
-
+            credentials = get_meta_credentials()
         except ImproperlyConfigured:
             response_payload = {
-                "error_message": "Recepción de webhook rechazada: la integración de Meta no se encuentra correctamente configurada.",
+                "error_message": "Recepción de webhook rechazada: la configuración global de Meta no se encuentra disponible.",
                 "data": {},
             }
 
@@ -1264,7 +1055,6 @@ class MetaWebhookView(APIView):
 
         try:
             payload = json.loads(request.body.decode("utf-8"))
-
         except (UnicodeDecodeError, json.JSONDecodeError):
             response_payload = {
                 "error_message": "Recepción de webhook rechazada: el contenido recibido no contiene JSON válido.",
@@ -1274,8 +1064,7 @@ class MetaWebhookView(APIView):
             return Response(response_payload, status=HTTP_400_BAD_REQUEST)
 
         try:
-            task = process_whatsapp_webhook_task.delay(integration.id, payload)
-
+            task = process_whatsapp_webhook_task.delay(payload)
         except Exception:
             response_payload = {
                 "error_message": "Recepción de webhook rechazada: no fue posible colocar el evento en procesamiento.",
@@ -1311,13 +1100,12 @@ class OutboundMessageView(APIView):
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMember]
     input_serializer = OutboundTextMessageSerializer
     output_serializer = MessageSerializer
 
     def post(self, request, company_id, branch_id, number_id, conversation_id):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
         conversation = resolve_whatsapp_number_conversation(whatsapp_number=whatsapp_number, conversation_id=conversation_id)
         serializer = self.input_serializer(data=request.data)
 

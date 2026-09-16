@@ -5,10 +5,10 @@ from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 from rest_framework.views import APIView
 from organizations.permissions import IsOrganizationAdministrator
-from .integration_operations import connect_whatsapp_business_account, disconnect_whatsapp_business_account, refresh_whatsapp_business_account_state, validate_meta_integration_credentials, validate_whatsapp_number_connection
+from .integration_operations import connect_whatsapp_business_account, disconnect_whatsapp_business_account, refresh_whatsapp_business_account_state, validate_whatsapp_number_connection
 from .meta_lifecycle import MetaLifecycleAPIError
-from .resolvers import resolve_administrative_company, resolve_company_branch, resolve_company_meta_integration, resolve_company_whatsapp_business_account, resolve_company_whatsapp_number
-from .serializers.integration import MetaIntegrationValidationResultSerializer, WhatsAppBusinessAccountLifecycleResultSerializer, WhatsAppNumberValidationResultSerializer
+from .resolvers import resolve_administrative_company, resolve_company_branch, resolve_company_whatsapp_business_account, resolve_company_whatsapp_number
+from .serializers.integration import WhatsAppBusinessAccountLifecycleResultSerializer, WhatsAppNumberValidationResultSerializer
 
 # Define your views here.
 
@@ -42,44 +42,6 @@ def build_lifecycle_error_response(error, error_message):
     return Response({"error_message": error_message, "data": response_data}, status=HTTP_400_BAD_REQUEST)
 
 
-class MetaIntegrationValidationView(APIView):
-    """
-        DOCSTRING: Meta Integration Validation View
-
-        Description:
-        - Validate the stored Meta credentials for one administrative company integration.
-
-        Notes:
-        - The client cannot directly set is_connected.
-        - Successful validation synchronizes the field from actual Meta authentication state.
-    """
-
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsOrganizationAdministrator]
-    output_serializer = MetaIntegrationValidationResultSerializer
-
-    def post(self, request, company_id, integration_id):
-        company = resolve_administrative_company(user=request.user, company_id=company_id)
-        integration = resolve_company_meta_integration(company=company, integration_id=integration_id)
-
-        try:
-            result = validate_meta_integration_credentials(meta_integration=integration, actor=request.user)
-
-        except (ValidationError, MetaLifecycleAPIError, ImproperlyConfigured) as error:
-            return build_lifecycle_error_response(
-                error=error,
-                error_message="Validación de integración rechazada: Meta no pudo validar la configuración.",
-            )
-
-        return Response(
-            {
-                "success_message": "Integración de Meta validada correctamente.",
-                "data": self.output_serializer(result).data,
-            },
-            status=HTTP_200_OK,
-        )
-
-
 class WhatsAppBusinessAccountConnectionView(APIView):
     """
         DOCSTRING: WhatsApp Business Account Connection View
@@ -88,9 +50,10 @@ class WhatsAppBusinessAccountConnectionView(APIView):
         - Connect, refresh, and disconnect the actual Meta lifecycle of a WABA.
 
         Notes:
-        - POST validates the WABA and subscribes the Meta app.
+        - POST validates the WABA and subscribes the Dialoqo Meta app.
         - PATCH refreshes state without changing the external subscription.
-        - DELETE explicitly removes the app subscription from Meta.
+        - DELETE explicitly removes the Dialoqo app subscription from Meta.
+        - Meta credentials are global to Dialoqo and are not company-specific.
     """
 
     authentication_classes = [TokenAuthentication]

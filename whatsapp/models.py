@@ -1,57 +1,12 @@
-import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 from common.mixins import AuthorMixin, LifeCycleMixin, TemporalMixin
-from members.models import Member
 from organizations.models import Branch, Company
 from .registry import MEDIA_STORAGE_STATUS_REGISTRY, MESSAGE_DIRECTION_REGISTRY, MESSAGE_STATUS_REGISTRY, MESSAGE_TEMPLATE_CATEGORY_REGISTRY, MESSAGE_TEMPLATE_PARAMETER_FORMAT_REGISTRY, MESSAGE_TEMPLATE_STATUS_REGISTRY, MESSAGE_TYPE_REGISTRY
 
 # Define your models here.
-
-class MetaIntegration(TemporalMixin, LifeCycleMixin, AuthorMixin):
-    """
-        DOCSTRING: Meta Integration
-
-        Description:
-        - Represent the Meta application configuration used by a Dialoqo company.
-        - Provide the company-specific integration context required for webhook validation and Meta API operations.
-
-        Notes:
-        - A Meta integration belongs to exactly one company.
-        - Sensitive Meta credentials must not be stored directly in this model.
-        - credential_reference identifies the corresponding secret in the configured secure credential store.
-        - webhook_key provides a non-sequential public identifier for webhook routing.
-        - Meta integrations must remain isolated between companies.
-    """
-
-    company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="meta_integrations")
-    meta_app_id = models.CharField(max_length=100, blank=False, null=False)
-    credential_reference = models.CharField(max_length=255, blank=False, null=False, unique=True)
-    webhook_key = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    is_connected = models.BooleanField(default=False)
-    connected_at = models.DateTimeField(blank=True, null=True)
-    disconnected_at = models.DateTimeField(blank=True, null=True)
-    notes = models.TextField(blank=True, null=False, default="")
-
-    class Meta:
-        db_table = "whatsapp_meta_integration"
-        ordering = ["company"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["company", "meta_app_id"],
-                name="unique_company_meta_app",
-            ),
-        ]
-        indexes = [
-            models.Index(fields=["company", "is_active"], name="idx_meta_company_active"),
-            models.Index(fields=["webhook_key"], name="idx_meta_webhook_key"),
-        ]
-
-    def __str__(self):
-        return f"{self.company.name} - {self.meta_app_id}"
-
 
 class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
     """
@@ -59,17 +14,15 @@ class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
 
         Description:
         - Represent a Meta WhatsApp Business Account configured in Dialoqo.
-        - Group one or more corporate WhatsApp numbers under the corresponding company and Meta integration.
+        - Group one or more corporate WhatsApp numbers under the corresponding company.
 
         Notes:
         - A WhatsApp Business Account belongs to exactly one company.
-        - The Meta integration must belong to the same company as the WhatsApp Business Account.
-        - Sensitive Meta credentials are managed through the corresponding Meta integration.
+        - Meta application credentials are global platform configuration and are never stored per company.
         - Records are deactivated instead of destructively deleted.
     """
 
     company = models.ForeignKey(Company, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_business_accounts")
-    meta_integration = models.ForeignKey(MetaIntegration, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_business_accounts")
     meta_waba_id = models.CharField(max_length=100, blank=False, null=False, unique=True)
     meta_business_id = models.CharField(max_length=100, blank=False, null=False)
     display_name = models.CharField(max_length=150, blank=False, null=False)
@@ -84,7 +37,6 @@ class WhatsAppBusinessAccount(TemporalMixin, LifeCycleMixin, AuthorMixin):
         ordering = ["display_name"]
         indexes = [
             models.Index(fields=["company", "is_active"], name="idx_waba_company_active"),
-            models.Index(fields=["meta_integration", "is_active"], name="idx_waba_meta_active"),
             models.Index(fields=["company", "is_connected"], name="idx_waba_company_connected"),
         ]
 
@@ -196,18 +148,19 @@ class NumberAssignment(TemporalMixin, LifeCycleMixin, AuthorMixin):
         DOCSTRING: Number Assignment
 
         Description:
-        - Represent the historical assignment of a WhatsApp number to a company member.
+        - Represent the historical assignment of a corporate WhatsApp number to a Dialoqo MEMBER user.
         - Preserve responsibility history when a WhatsApp number is reassigned.
 
         Notes:
         - Only one active assignment may exist for a WhatsApp number.
-        - The member must belong to the same company and branch as the WhatsApp number.
+        - Only active AccessUser records with role MEMBER may receive number assignments.
+        - Assignment eligibility and administrative ownership are enforced by serializers and operations.
         - Reassignment must close the existing assignment before creating the new assignment.
         - Historical assignments must never be overwritten or deleted.
     """
 
     whatsapp_number = models.ForeignKey(WhatsAppNumber, blank=False, null=False, on_delete=models.PROTECT, related_name="assignments")
-    member = models.ForeignKey(Member, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_number_assignments")
+    member = models.ForeignKey(settings.AUTH_USER_MODEL, blank=False, null=False, on_delete=models.PROTECT, related_name="whatsapp_number_assignments")
     assigned_at = models.DateTimeField(default=timezone.now)
     unassigned_at = models.DateTimeField(blank=True, null=True)
 
@@ -232,7 +185,7 @@ class NumberAssignment(TemporalMixin, LifeCycleMixin, AuthorMixin):
         ]
 
     def __str__(self):
-        return f"{self.whatsapp_number.phone_number} - {self.member}"
+        return f"{self.whatsapp_number.phone_number} - {self.member.username}"
 
 
 class Customer(TemporalMixin, LifeCycleMixin, AuthorMixin):

@@ -1,52 +1,56 @@
-import json
 import os
 from django.core.exceptions import ImproperlyConfigured
 
 # Define your helpers here.
 
-def get_meta_credentials(credential_reference):
+
+def _get_required_meta_setting(name):
+    """
+        DOCSTRING: Get Required Meta Setting
+
+        Description:
+        - Resolve one required global Dialoqo Meta platform setting from the server environment.
+
+        Notes:
+        - Sensitive Meta values remain outside the application database.
+        - Environment values are intentionally resolved only on the backend.
+    """
+
+    value = os.environ.get(name)
+
+    if not value:
+        raise ImproperlyConfigured(f"Configuración de Meta rechazada: {name} no se encuentra configurado.")
+
+    return value
+
+
+def get_meta_app_id():
+    """
+        DOCSTRING: Get Meta App ID
+
+        Description:
+        - Return the single Meta App ID used globally by the Dialoqo platform.
+    """
+
+    return _get_required_meta_setting("DIALOQO_META_APP_ID")
+
+
+def get_meta_credentials():
     """
         DOCSTRING: Get Meta Credentials
 
         Description:
-        - Resolve the Meta credentials associated with a credential reference.
+        - Resolve the global Meta credentials used by the Dialoqo platform.
 
         Notes:
+        - Dialoqo uses one Meta application across customer companies.
+        - Customer administrators never provide or manage application secrets.
         - Sensitive Meta credentials must remain outside the application database.
-        - During development, credentials are resolved from the server environment.
-        - Production environments should replace this provider with a dedicated secret-management service.
+        - Production environments should preferably inject these values from a dedicated secret-management service.
     """
 
-    secrets_payload = os.environ.get("Dialoqo_META_SECRETS")
-
-    if not secrets_payload:
-        raise ImproperlyConfigured("Configuración de Meta rechazada: el almacén de credenciales no se encuentra configurado.")
-
-    try:
-        secrets = json.loads(secrets_payload)
-    except json.JSONDecodeError as error:
-        raise ImproperlyConfigured("Configuración de Meta rechazada: el almacén de credenciales contiene información inválida.") from error
-
-    credentials = secrets.get(credential_reference)
-
-    if credentials is None:
-        raise ImproperlyConfigured("Configuración de Meta rechazada: no existen credenciales para la referencia especificada.")
-
-    access_token = credentials.get("access_token")
-    app_secret = credentials.get("app_secret")
-    verify_token = credentials.get("verify_token")
-
-    if not access_token:
-        raise ImproperlyConfigured("Configuración de Meta rechazada: el access token no se encuentra configurado.")
-
-    if not app_secret:
-        raise ImproperlyConfigured("Configuración de Meta rechazada: el app secret no se encuentra configurado.")
-
-    if not verify_token:
-        raise ImproperlyConfigured("Configuración de Meta rechazada: el verify token no se encuentra configurado.")
-
     return {
-        "access_token": access_token,
-        "app_secret": app_secret,
-        "verify_token": verify_token,
+        "access_token": _get_required_meta_setting("DIALOQO_META_ACCESS_TOKEN"),
+        "app_secret": _get_required_meta_setting("DIALOQO_META_APP_SECRET"),
+        "verify_token": _get_required_meta_setting("DIALOQO_META_VERIFY_TOKEN"),
     }
