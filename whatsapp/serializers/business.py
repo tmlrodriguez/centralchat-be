@@ -1,39 +1,14 @@
 from rest_framework import serializers
 
+from access.registry import ROLE_REGISTRY
 from access.serializers.snapshots import AccessUserSnapshotSerializer
 from organizations.serializers.snapshots import CompanySnapshotSerializer
 
 from .snapshots import CustomerSnapshotSerializer, MediaAttachmentSnapshotSerializer, MessageSnapshotSerializer, NumberAssignmentSnapshotSerializer
-from ..models import Conversation, Customer, MediaAttachment, Message, MetaIntegration, NumberAssignment, WhatsAppBusinessAccount, WhatsAppNumber
+from ..models import Conversation, Customer, MediaAttachment, Message, NumberAssignment, WhatsAppBusinessAccount, WhatsAppNumber
 
 
 # Define your serializers here.
-
-class MetaIntegrationSerializer(serializers.ModelSerializer):
-    """
-        DOCSTRING: Meta Integration Serializer
-
-        Description:
-        - Serialize and validate the Meta application integration configured for a Dialoqo company.
-
-        Notes:
-        - The company is derived from the URL and controlled by the backend.
-        - Sensitive Meta credentials must never be exposed through this serializer.
-        - credential_reference identifies the corresponding entry in the secure credential store.
-        - webhook_key is generated exclusively by the backend.
-        - Connection lifecycle fields are controlled exclusively by the backend.
-        - Temporal and author fields are controlled exclusively by the backend.
-    """
-
-    company = CompanySnapshotSerializer(read_only=True)
-    created_by = AccessUserSnapshotSerializer(read_only=True)
-    updated_by = AccessUserSnapshotSerializer(read_only=True)
-
-    class Meta:
-        model = MetaIntegration
-        fields = ["id", "company", "meta_app_id", "credential_reference", "webhook_key", "is_connected", "connected_at", "disconnected_at", "notes", "is_active", "created_at", "updated_at", "created_by", "updated_by"]
-        read_only_fields = ["id", "company", "webhook_key", "is_connected", "connected_at", "disconnected_at", "created_at", "updated_at", "created_by", "updated_by"]
-
 
 class WhatsAppBusinessAccountSerializer(serializers.ModelSerializer):
     """
@@ -44,8 +19,7 @@ class WhatsAppBusinessAccountSerializer(serializers.ModelSerializer):
 
         Notes:
         - The company is derived from the URL and controlled by the backend.
-        - The selected Meta integration must belong to the same active company.
-        - Sensitive Meta credentials are not exposed through this serializer.
+        - Meta credentials are global platform configuration and are never exposed through this serializer.
         - Connection and webhook lifecycle fields are controlled exclusively by the backend.
         - Temporal and author fields are controlled exclusively by the backend.
     """
@@ -56,22 +30,9 @@ class WhatsAppBusinessAccountSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WhatsAppBusinessAccount
-        fields = ["id", "company", "meta_integration", "meta_waba_id", "meta_business_id", "display_name", "is_connected", "is_webhook_configured", "connected_at", "disconnected_at", "notes", "is_active", "created_at", "updated_at", "created_by", "updated_by"]
+        fields = ["id", "company", "meta_waba_id", "meta_business_id", "display_name", "is_connected", "is_webhook_configured", "connected_at", "disconnected_at", "notes", "is_active", "created_at", "updated_at", "created_by", "updated_by"]
         read_only_fields = ["id", "company", "is_connected", "is_webhook_configured", "connected_at", "disconnected_at", "created_at", "updated_at", "created_by", "updated_by"]
 
-    def validate_meta_integration(self, value):
-        company = self.context.get("company")
-
-        if company is None:
-            raise serializers.ValidationError("Asignación de integración rechazada: no se pudo determinar la empresa.")
-
-        if value.company_id != company.id:
-            raise serializers.ValidationError("Asignación de integración rechazada: la integración de Meta no pertenece a la empresa.")
-
-        if not value.is_active:
-            raise serializers.ValidationError("Asignación de integración rechazada: la integración de Meta se encuentra inactiva.")
-
-        return value
 
 
 class WhatsAppNumberSerializer(serializers.ModelSerializer):
@@ -109,9 +70,6 @@ class WhatsAppNumberSerializer(serializers.ModelSerializer):
         if not value.is_active:
             raise serializers.ValidationError("Asignación de cuenta rechazada: la cuenta de WhatsApp Business se encuentra inactiva.")
 
-        if not value.meta_integration.is_active:
-            raise serializers.ValidationError("Asignación de cuenta rechazada: la integración de Meta asociada se encuentra inactiva.")
-
         return value
 
 
@@ -120,12 +78,12 @@ class NumberAssignmentSerializer(serializers.ModelSerializer):
         DOCSTRING: Number Assignment Serializer
 
         Description:
-        - Validate assignment of a company member to a corporate WhatsApp number.
+        - Validate assignment of a Dialoqo MEMBER user to a corporate WhatsApp number.
 
         Notes:
         - The WhatsApp number is determined by the URL and controlled by the backend.
-        - The member must belong to the same company and branch as the WhatsApp number.
-        - The member must remain active.
+        - Only active AccessUser records with role MEMBER may receive assignments.
+        - The MEMBER account must belong to the administrator that owns the WhatsApp number's company.
         - Historical lifecycle fields are controlled by the backend.
         - Assignment invariants are validated again inside the transactional operation layer.
     """
@@ -141,14 +99,14 @@ class NumberAssignmentSerializer(serializers.ModelSerializer):
         if whatsapp_number is None:
             raise serializers.ValidationError("Asignación de número rechazada: no se pudo determinar el número de WhatsApp.")
 
-        if value.company_id != whatsapp_number.company_id:
-            raise serializers.ValidationError("Asignación de número rechazada: el miembro no pertenece a la misma empresa.")
-
-        if value.branch_id != whatsapp_number.branch_id:
-            raise serializers.ValidationError("Asignación de número rechazada: el miembro no pertenece a la misma sucursal.")
+        if value.role != ROLE_REGISTRY.MEMBER:
+            raise serializers.ValidationError("Asignación de número rechazada: el usuario seleccionado debe tener el rol MEMBER.")
 
         if not value.is_active:
             raise serializers.ValidationError("Asignación de número rechazada: el miembro seleccionado se encuentra inactivo.")
+
+        if value.created_by_id != whatsapp_number.company.created_by_id:
+            raise serializers.ValidationError("Asignación de número rechazada: el miembro seleccionado no pertenece al administrador propietario de la empresa.")
 
         return value
 

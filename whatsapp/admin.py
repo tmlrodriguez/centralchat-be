@@ -1,9 +1,8 @@
 from django.contrib import admin
-from .models import Conversation, ConversationReadState, Customer, MediaAttachment, Message, MetaIntegration, NumberAssignment, WhatsAppBusinessAccount, WhatsAppMessageTemplate, WhatsAppNumber
+from .models import Conversation, ConversationReadState, Customer, MediaAttachment, Message, NumberAssignment, WhatsAppBusinessAccount, WhatsAppMessageTemplate, WhatsAppNumber
 
 # Register your models here.
 
-admin.site.register(MetaIntegration)
 admin.site.register(WhatsAppBusinessAccount)
 admin.site.register(WhatsAppNumber)
 admin.site.register(NumberAssignment)

@@ -212,12 +212,7 @@ def schedule_conversation_updated_event(conversation):
 
         whatsapp_number = persisted_conversation.whatsapp_number
 
-        current_assignment = NumberAssignment.objects.select_related(
-            "member",
-            "member__company",
-            "member__branch",
-            "member__position",
-        ).filter(whatsapp_number=whatsapp_number, is_active=True).first()
+        current_assignment = NumberAssignment.objects.select_related("member").filter(whatsapp_number=whatsapp_number, is_active=True).first()
 
         group_name = get_whatsapp_number_group_name(company_id=whatsapp_number.company_id, whatsapp_number_id=whatsapp_number.id)
 
@@ -296,12 +291,7 @@ def schedule_number_assignment_changed_event(whatsapp_number):
         if persisted_number is None:
             return
 
-        current_assignment = NumberAssignment.objects.select_related(
-            "member",
-            "member__company",
-            "member__branch",
-            "member__position",
-        ).filter(whatsapp_number=persisted_number, is_active=True).first()
+        current_assignment = NumberAssignment.objects.select_related("member").filter(whatsapp_number=persisted_number, is_active=True).first()
 
         group_name = get_whatsapp_number_group_name(company_id=persisted_number.company_id, whatsapp_number_id=persisted_number.id)
 

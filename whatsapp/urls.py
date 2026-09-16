@@ -1,16 +1,13 @@
 from django.urls import path
-from .integration_views import MetaIntegrationValidationView, WhatsAppBusinessAccountConnectionView, WhatsAppNumberValidationView
+from .integration_views import WhatsAppBusinessAccountConnectionView, WhatsAppNumberValidationView
 from .media_views import MediaAttachmentContentView
 from .template_views import AvailableMessageTemplateView, ConversationTemplateSendView, MessageTemplateSyncView, MessageTemplateView, NewConversationTemplateSendView
-from .views import ConversationReadView, ConversationView, MediaAttachmentView, MessageView, MetaIntegrationView, MetaWebhookView, MonitoringContextView, NumberAssignmentView, OutboundMessageView, WhatsAppBusinessAccountView, WhatsAppMonitoringView, WhatsAppNumberView
+from .views import ConversationReadView, ConversationView, MediaAttachmentView, MessageView, MetaWebhookView, MonitoringContextView, NumberAssignmentView, OutboundMessageView, WhatsAppBusinessAccountView, WhatsAppMonitoringView, WhatsAppNumberView
 # Define your urls here.
 
 app_name = "whatsapp"
 
 urlpatterns = [
-    path("companies/<int:company_id>/integrations/", MetaIntegrationView.as_view(), name="integration-list-create"),
-    path("companies/<int:company_id>/integrations/<int:integration_id>/", MetaIntegrationView.as_view(), name="integration-detail"),
-    path("companies/<int:company_id>/integrations/<int:integration_id>/validate/", MetaIntegrationValidationView.as_view(), name="integration-validate"),
     path("companies/<int:company_id>/accounts/", WhatsAppBusinessAccountView.as_view(), name="account-list-create"),
     path("companies/<int:company_id>/accounts/<int:account_id>/", WhatsAppBusinessAccountView.as_view(), name="account-detail"),
     path("companies/<int:company_id>/accounts/<int:account_id>/connection/", WhatsAppBusinessAccountConnectionView.as_view(), name="account-connection"),
@@ -36,5 +33,5 @@ urlpatterns = [
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/conversations/<int:conversation_id>/messages/<int:message_id>/attachments/", MediaAttachmentView.as_view(), name="attachment-list"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/conversations/<int:conversation_id>/messages/<int:message_id>/attachments/<int:attachment_id>/", MediaAttachmentView.as_view(), name="attachment-detail"),
     path("companies/<int:company_id>/branches/<int:branch_id>/numbers/<int:number_id>/conversations/<int:conversation_id>/messages/<int:message_id>/attachments/<int:attachment_id>/content/", MediaAttachmentContentView.as_view(), name="attachment-content"),
-    path("webhooks/<uuid:webhook_key>/", MetaWebhookView.as_view(), name="meta-webhook"),
+    path("webhooks/", MetaWebhookView.as_view(), name="meta-webhook"),
 ]

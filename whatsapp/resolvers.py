@@ -1,8 +1,10 @@
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 
+from access.registry import ROLE_REGISTRY
 from organizations.models import Branch, Company, UserCompanyAccess
 
-from .models import Conversation, MediaAttachment, Message, MetaIntegration, NumberAssignment, WhatsAppBusinessAccount, WhatsAppMessageTemplate, WhatsAppNumber
+from .models import Conversation, MediaAttachment, Message, NumberAssignment, WhatsAppBusinessAccount, WhatsAppMessageTemplate, WhatsAppNumber
 
 
 # Define your tenant-safe resolvers here.
@@ -29,6 +31,67 @@ def resolve_user_company_access(user, company_id):
         company__is_active=True,
     )
 
+
+
+def resolve_monitoring_whatsapp_number(user, company_id, branch_id, number_id):
+    """
+        DOCSTRING: Resolve Monitoring WhatsApp Number
+
+        Description:
+        - Resolve an operational WhatsApp number available to an authenticated MONITOR or MEMBER user.
+        - Apply role-specific authorization before exposing conversation resources.
+
+        Notes:
+        - MONITOR authorization is established through an active UserCompanyAccess record.
+        - MEMBER authorization is established through the active NumberAssignment for the requested number.
+        - MEMBER users may access only WhatsApp numbers currently assigned to them.
+        - The company, branch, WABA, number, connection, and monitoring lifecycle must remain active.
+        - Unauthorized and foreign identifiers intentionally behave as nonexistent.
+    """
+
+    if user.role == ROLE_REGISTRY.MONITOR:
+        company_access = resolve_user_company_access(user=user, company_id=company_id)
+
+        return get_object_or_404(
+            WhatsAppNumber.objects.select_related("company", "branch", "whatsapp_business_account", "whatsapp_business_account__company"),
+            id=number_id,
+            company=company_access.company,
+            branch_id=branch_id,
+            branch__company=company_access.company,
+            branch__is_active=True,
+            whatsapp_business_account__company=company_access.company,
+            whatsapp_business_account__is_active=True,
+            is_active=True,
+            is_connected=True,
+            is_monitoring_enabled=True,
+        )
+
+    if user.role == ROLE_REGISTRY.MEMBER:
+        assignment = get_object_or_404(
+            NumberAssignment.objects.select_related(
+                "member",
+                "whatsapp_number",
+                "whatsapp_number__company",
+                "whatsapp_number__branch",
+                "whatsapp_number__whatsapp_business_account",
+            ),
+            member=user,
+            whatsapp_number_id=number_id,
+            whatsapp_number__company_id=company_id,
+            whatsapp_number__branch_id=branch_id,
+            whatsapp_number__company__is_active=True,
+            whatsapp_number__branch__is_active=True,
+            whatsapp_number__whatsapp_business_account__is_active=True,
+            whatsapp_number__is_active=True,
+            whatsapp_number__is_connected=True,
+            whatsapp_number__is_monitoring_enabled=True,
+            is_active=True,
+            unassigned_at__isnull=True,
+        )
+
+        return assignment.whatsapp_number
+
+    raise Http404
 
 def resolve_administrative_company(user, company_id):
     """
@@ -59,20 +122,6 @@ def resolve_company_branch(company, branch_id):
     return get_object_or_404(Branch, id=branch_id, company=company, is_active=True)
 
 
-def resolve_company_meta_integration(company, integration_id):
-    """
-        DOCSTRING: Resolve Company Meta Integration
-
-        Description:
-        - Resolve an active Meta integration strictly inside the supplied company.
-
-        Notes:
-        - Global integration resolution is intentionally prohibited.
-    """
-
-    return get_object_or_404(MetaIntegration, id=integration_id, company=company, is_active=True)
-
-
 def resolve_company_whatsapp_business_account(company, account_id):
     """
         DOCSTRING: Resolve Company WhatsApp Business Account
@@ -81,14 +130,13 @@ def resolve_company_whatsapp_business_account(company, account_id):
         - Resolve an active WhatsApp Business Account strictly inside the supplied company.
 
         Notes:
-        - The associated Meta integration must also belong to the same company.
+        - The account is resolved directly inside the supplied company tenant.
     """
 
     return get_object_or_404(
-        WhatsAppBusinessAccount.objects.select_related("company", "meta_integration"),
+        WhatsAppBusinessAccount.objects.select_related("company"),
         id=account_id,
         company=company,
-        meta_integration__company=company,
         is_active=True,
     )
 
@@ -103,7 +151,7 @@ def resolve_company_whatsapp_number(company, branch_id, number_id):
         Notes:
         - The branch must belong to the company.
         - The WABA must belong to the company.
-        - The Meta integration must belong to the company.
+        - The WABA and branch must belong to the supplied company.
         - Foreign resource identifiers intentionally return not found.
     """
 
@@ -113,8 +161,6 @@ def resolve_company_whatsapp_number(company, branch_id, number_id):
             "branch",
             "whatsapp_business_account",
             "whatsapp_business_account__company",
-            "whatsapp_business_account__meta_integration",
-            "whatsapp_business_account__meta_integration__company",
         ),
         id=number_id,
         company=company,
@@ -122,7 +168,6 @@ def resolve_company_whatsapp_number(company, branch_id, number_id):
         branch__company=company,
         branch__is_active=True,
         whatsapp_business_account__company=company,
-        whatsapp_business_account__meta_integration__company=company,
         is_active=True,
     )
 
@@ -207,12 +252,13 @@ def resolve_whatsapp_number_assignment(whatsapp_number, assignment_id):
         - Resolve an assignment strictly inside the supplied WhatsApp number.
 
         Notes:
+        - The assigned MEMBER AccessUser is loaded with the assignment.
         - Historical assignments remain resolvable.
         - Foreign assignment identifiers intentionally return not found.
     """
 
     return get_object_or_404(
-        NumberAssignment.objects.select_related("member", "member__company", "member__branch", "member__position"),
+        NumberAssignment.objects.select_related("member"),
         id=assignment_id,
         whatsapp_number=whatsapp_number,
     )
@@ -233,7 +279,6 @@ def resolve_waba_message_template(whatsapp_business_account, template_id, active
     queryset = WhatsAppMessageTemplate.objects.select_related(
         "whatsapp_business_account",
         "whatsapp_business_account__company",
-        "whatsapp_business_account__meta_integration",
     ).filter(
         id=template_id,
         whatsapp_business_account=whatsapp_business_account,

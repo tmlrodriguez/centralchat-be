@@ -1,31 +1,12 @@
 from rest_framework import serializers
 
-from members.serializers.snapshots import MemberSnapshotSerializer
+from access.serializers.snapshots import AccessUserSnapshotSerializer
 from organizations.serializers.snapshots import BranchSnapshotSerializer, CompanySnapshotSerializer
 
-from ..models import Conversation, ConversationReadState, Customer, MediaAttachment, Message, MetaIntegration, NumberAssignment, WhatsAppBusinessAccount, WhatsAppNumber
+from ..models import Conversation, ConversationReadState, Customer, MediaAttachment, Message, NumberAssignment, WhatsAppBusinessAccount, WhatsAppNumber
 
 
 # Define your serializers here.
-
-class MetaIntegrationSnapshotSerializer(serializers.ModelSerializer):
-    """
-        DOCSTRING: Meta Integration Snapshot Serializer
-
-        Description:
-        - Provide a compact read-only representation of a company Meta integration.
-
-        Notes:
-        - Sensitive credentials and credential references are intentionally excluded.
-        - webhook_key is intentionally excluded from normal snapshot responses.
-        - Snapshot serializers must remain read-only.
-    """
-
-    class Meta:
-        model = MetaIntegration
-        fields = ["id", "meta_app_id", "is_connected", "is_active"]
-        read_only_fields = fields
-
 
 class WhatsAppBusinessAccountSnapshotSerializer(serializers.ModelSerializer):
     """
@@ -35,16 +16,15 @@ class WhatsAppBusinessAccountSnapshotSerializer(serializers.ModelSerializer):
         - Provide a compact read-only representation of a WhatsApp Business Account.
 
         Notes:
-        - The associated Meta integration is represented through its compact snapshot.
+        - Connection state is represented directly on the WABA snapshot.
         - Sensitive Meta credentials are intentionally excluded.
         - Snapshot serializers must remain read-only.
     """
 
-    meta_integration = MetaIntegrationSnapshotSerializer(read_only=True)
 
     class Meta:
         model = WhatsAppBusinessAccount
-        fields = ["id", "meta_integration", "display_name", "meta_waba_id", "is_connected", "is_webhook_configured", "is_active"]
+        fields = ["id", "display_name", "meta_waba_id", "is_connected", "is_webhook_configured", "is_active"]
         read_only_fields = fields
 
 
@@ -79,12 +59,12 @@ class NumberAssignmentSnapshotSerializer(serializers.ModelSerializer):
         - Provide a compact read-only representation of a WhatsApp number assignment.
 
         Notes:
-        - The member relationship is represented through MemberSnapshotSerializer.
+        - The member relationship is represented through AccessUserSnapshotSerializer.
         - Historical assignment information must remain read-only.
         - is_active identifies whether the assignment represents current responsibility or historical responsibility.
     """
 
-    member = MemberSnapshotSerializer(read_only=True)
+    member = AccessUserSnapshotSerializer(read_only=True)
 
     class Meta:
         model = NumberAssignment

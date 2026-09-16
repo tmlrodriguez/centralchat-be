@@ -41,7 +41,7 @@ def get_meta_graph_api_version():
         - The version is centralized through Django settings.
     """
 
-    return getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v26.0")
+    return getattr(settings, "DIALOQO_META_GRAPH_API_VERSION", getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v26.0"))
 
 
 def build_meta_graph_api_url(resource_path):
@@ -88,12 +88,12 @@ def extract_meta_api_error(response):
     )
 
 
-def get_meta_access_token(meta_integration):
+def get_meta_access_token():
     """
         DOCSTRING: Get Meta Access Token
 
         Description:
-        - Resolve the access token associated with a Meta integration.
+        - Resolve the global access token used by the Dialoqo Meta application.
 
         Notes:
         - Credentials remain outside the application database.
@@ -101,14 +101,14 @@ def get_meta_access_token(meta_integration):
     """
 
     try:
-        credentials = get_meta_credentials(meta_integration.credential_reference)
+        credentials = get_meta_credentials()
     except ImproperlyConfigured as error:
         raise MetaWhatsAppAPIError(error_message="Operación de Meta rechazada: la integración no se encuentra correctamente configurada.") from error
 
     return credentials["access_token"]
 
 
-def meta_get(meta_integration, resource_path, params=None):
+def meta_get(resource_path, params=None):
     """
         DOCSTRING: Meta Get
 
@@ -119,7 +119,7 @@ def meta_get(meta_integration, resource_path, params=None):
         - Network and API failures are normalized.
     """
 
-    access_token = get_meta_access_token(meta_integration)
+    access_token = get_meta_access_token()
 
     try:
         response = requests.get(
@@ -140,7 +140,7 @@ def meta_get(meta_integration, resource_path, params=None):
         raise MetaWhatsAppAPIError(error_message="Operación de Meta rechazada: Meta devolvió una respuesta inválida.", http_status=response.status_code) from error
 
 
-def meta_post(meta_integration, resource_path, payload=None, params=None):
+def meta_post(resource_path, payload=None, params=None):
     """
         DOCSTRING: Meta Post
 
@@ -151,7 +151,7 @@ def meta_post(meta_integration, resource_path, payload=None, params=None):
         - Network and API failures are normalized.
     """
 
-    access_token = get_meta_access_token(meta_integration)
+    access_token = get_meta_access_token()
 
     try:
         response = requests.post(
@@ -176,7 +176,7 @@ def meta_post(meta_integration, resource_path, payload=None, params=None):
         raise MetaWhatsAppAPIError(error_message="Operación de Meta rechazada: Meta devolvió una respuesta inválida.", http_status=response.status_code) from error
 
 
-def meta_delete(meta_integration, resource_path, params=None):
+def meta_delete(resource_path, params=None):
     """
         DOCSTRING: Meta Delete
 
@@ -187,7 +187,7 @@ def meta_delete(meta_integration, resource_path, params=None):
         - Network and API failures are normalized.
     """
 
-    access_token = get_meta_access_token(meta_integration)
+    access_token = get_meta_access_token()
 
     try:
         response = requests.delete(
@@ -220,14 +220,12 @@ def send_meta_whatsapp_text_message(whatsapp_number, recipient_phone_number, tex
         - Business validation and persistence belong to the operation layer.
     """
 
-    meta_integration = whatsapp_number.whatsapp_business_account.meta_integration
     normalized_recipient = normalize_phone_number(recipient_phone_number)
 
     if not normalized_recipient:
         raise MetaWhatsAppAPIError(error_message="Envío de mensaje rechazado: el número de destino no es válido.")
 
     response_data = meta_post(
-        meta_integration=meta_integration,
         resource_path=f"{whatsapp_number.meta_phone_number_id}/messages",
         payload={
             "messaging_product": "whatsapp",
@@ -263,14 +261,13 @@ def list_meta_whatsapp_message_templates(whatsapp_business_account):
         - Return the template representation provided by the Meta Business Management API.
 
         Notes:
-        - The WhatsApp Business Account Meta integration supplies the access token.
+        - The global Dialoqo Meta configuration supplies the access token.
         - The default Meta template representation already contains the fields required by Dialoqo.
         - Explicit field projection is intentionally avoided because optional template fields may produce Graph API validation failures for some template types.
         - Meta pagination cursors are followed when additional pages are available.
         - Template normalization and persistence remain the responsibility of the synchronization operation.
     """
 
-    meta_integration = whatsapp_business_account.meta_integration
     templates = []
     after = None
 
@@ -281,7 +278,6 @@ def list_meta_whatsapp_message_templates(whatsapp_business_account):
             params["after"] = after
 
         response_data = meta_get(
-            meta_integration=meta_integration,
             resource_path=f"{whatsapp_business_account.meta_waba_id}/message_templates",
             params=params,
         )
@@ -322,7 +318,6 @@ def create_meta_whatsapp_message_template(whatsapp_business_account, name, langu
         payload["parameter_format"] = parameter_format
 
     return meta_post(
-        meta_integration=whatsapp_business_account.meta_integration,
         resource_path=f"{whatsapp_business_account.meta_waba_id}/message_templates",
         payload=payload,
     )
@@ -352,7 +347,6 @@ def update_meta_whatsapp_message_template(whatsapp_message_template, category=No
         raise MetaWhatsAppAPIError(error_message="Actualización de plantilla rechazada: no se proporcionaron cambios.")
 
     return meta_post(
-        meta_integration=whatsapp_message_template.whatsapp_business_account.meta_integration,
         resource_path=whatsapp_message_template.meta_template_id,
         payload=payload,
     )
@@ -371,7 +365,6 @@ def delete_meta_whatsapp_message_template(whatsapp_message_template):
     """
 
     return meta_delete(
-        meta_integration=whatsapp_message_template.whatsapp_business_account.meta_integration,
         resource_path=f"{whatsapp_message_template.whatsapp_business_account.meta_waba_id}/message_templates",
         params={"name": whatsapp_message_template.name},
     )
@@ -406,7 +399,6 @@ def send_meta_whatsapp_template_message(whatsapp_number, recipient_phone_number,
         template_payload["components"] = components
 
     response_data = meta_post(
-        meta_integration=whatsapp_number.whatsapp_business_account.meta_integration,
         resource_path=f"{whatsapp_number.meta_phone_number_id}/messages",
         payload={
             "messaging_product": "whatsapp",

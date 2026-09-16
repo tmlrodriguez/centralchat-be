@@ -5,12 +5,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST
 from rest_framework.views import APIView
-from access.permissions import IsMonitor
 from organizations.permissions import IsOrganizationAdministrator
 from .meta import MetaWhatsAppAPIError
+from .permissions import IsMember
 from .models import WhatsAppMessageTemplate
 from .registry import MESSAGE_TEMPLATE_STATUS_REGISTRY
-from .resolvers import resolve_administrative_company, resolve_company_whatsapp_business_account, resolve_company_whatsapp_number, resolve_user_company_access, resolve_waba_message_template, resolve_whatsapp_number_conversation
+from .resolvers import resolve_administrative_company, resolve_company_whatsapp_business_account, resolve_monitoring_whatsapp_number, resolve_waba_message_template, resolve_whatsapp_number_conversation
 from .serializers.business import MessageSerializer
 from .serializers.templates import NewConversationTemplateSendSerializer, TemplateSendSerializer, WhatsAppMessageTemplateCreateSerializer, WhatsAppMessageTemplateSerializer, WhatsAppMessageTemplateSnapshotSerializer, WhatsAppMessageTemplateUpdateSerializer
 from .template_operations import create_whatsapp_message_template, delete_whatsapp_message_template, send_template_to_existing_conversation, send_template_to_new_conversation, synchronize_whatsapp_message_templates, update_whatsapp_message_template
@@ -43,7 +43,6 @@ class MessageTemplateView(APIView):
         templates = WhatsAppMessageTemplate.objects.filter(
             whatsapp_business_account=account,
             whatsapp_business_account__company=company,
-            whatsapp_business_account__meta_integration__company=company,
             is_active=True,
         )
 
@@ -250,26 +249,24 @@ class AvailableMessageTemplateView(APIView):
         DOCSTRING: Available Message Template View
 
         Description:
-        - Return approved templates available to a monitoring user for a specific WhatsApp number.
+        - Return approved templates available to a MEMBER user for a currently assigned WhatsApp number.
 
         Notes:
-        - User company access is resolved before the WhatsApp number.
+        - The current MEMBER assignment is resolved before the WhatsApp number is exposed.
         - The template catalog is restricted to the exact WABA attached to that number.
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMember]
     serializer_class = WhatsAppMessageTemplateSnapshotSerializer
     pagination_class = MessageTemplatePagination
 
     def get(self, request, company_id, branch_id, number_id):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
 
         templates = WhatsAppMessageTemplate.objects.filter(
             whatsapp_business_account=whatsapp_number.whatsapp_business_account,
-            whatsapp_business_account__company=company_access.company,
-            whatsapp_business_account__meta_integration__company=company_access.company,
+            whatsapp_business_account__company=whatsapp_number.company,
             status=MESSAGE_TEMPLATE_STATUS_REGISTRY.APPROVED,
             is_available_in_meta=True,
             is_active=True,
@@ -307,11 +304,10 @@ class ConversationTemplateSendView(APIView):
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMember]
 
     def post(self, request, company_id, branch_id, number_id, conversation_id):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
         conversation = resolve_whatsapp_number_conversation(whatsapp_number=whatsapp_number, conversation_id=conversation_id)
 
         serializer = TemplateSendSerializer(data=request.data)
@@ -386,11 +382,10 @@ class NewConversationTemplateSendView(APIView):
     """
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsMonitor]
+    permission_classes = [IsAuthenticated, IsMember]
 
     def post(self, request, company_id, branch_id, number_id):
-        company_access = resolve_user_company_access(user=request.user, company_id=company_id)
-        whatsapp_number = resolve_company_whatsapp_number(company=company_access.company, branch_id=branch_id, number_id=number_id)
+        whatsapp_number = resolve_monitoring_whatsapp_number(user=request.user, company_id=company_id, branch_id=branch_id, number_id=number_id)
 
         serializer = NewConversationTemplateSendSerializer(data=request.data)
 

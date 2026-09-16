@@ -71,15 +71,15 @@ def get_meta_media_metadata(meta_media_id, access_token):
 
         Notes:
         - The returned Meta URL is temporary and must never be persisted as a permanent media URL.
-        - Authorization uses the Meta access token associated with the owning integration.
+        - Authorization uses the global Meta access token configured by Dialoqo.
         - Non-successful Meta responses are converted into controlled MetaMediaError exceptions.
     """
 
-    graph_api_version = getattr(settings, "Dialoqo_META_GRAPH_API_VERSION", "v24.0")
+    graph_api_version = getattr(settings, "DIALOQO_META_GRAPH_API_VERSION", "v24.0")
     request_url = f"https://graph.facebook.com/{graph_api_version}/{meta_media_id}"
 
     try:
-        response = requests.get(request_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.Dialoqo_META_MEDIA_REQUEST_TIMEOUT)
+        response = requests.get(request_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.DIALOQO_META_MEDIA_REQUEST_TIMEOUT)
     except requests.RequestException as error:
         raise MetaMediaError("Obtención de medio rechazada: no fue posible consultar los metadatos del archivo en Meta.") from error
 
@@ -120,7 +120,7 @@ def download_meta_media(media_url, access_token, maximum_size):
     """
 
     try:
-        response = requests.get(media_url, headers={"Authorization": f"Bearer {access_token}"}, stream=True, timeout=settings.Dialoqo_META_MEDIA_REQUEST_TIMEOUT)
+        response = requests.get(media_url, headers={"Authorization": f"Bearer {access_token}"}, stream=True, timeout=settings.DIALOQO_META_MEDIA_REQUEST_TIMEOUT)
     except requests.RequestException as error:
         raise MetaMediaError("Descarga de medio rechazada: no fue posible descargar el archivo desde Meta.") from error
 
@@ -128,7 +128,7 @@ def download_meta_media(media_url, access_token, maximum_size):
         response.close()
         raise MetaMediaError("Descarga de medio rechazada: Meta no permitió descargar el archivo.")
 
-    temporary_file = settings.Dialoqo_META_MEDIA_TEMPORARY_FILE_CLASS(max_size=settings.Dialoqo_META_MEDIA_MEMORY_THRESHOLD, mode="w+b")
+    temporary_file = settings.DIALOQO_META_MEDIA_TEMPORARY_FILE_CLASS(max_size=settings.DIALOQO_META_MEDIA_MEMORY_THRESHOLD, mode="w+b")
     checksum = hashlib.sha256()
     size = 0
 
@@ -180,7 +180,7 @@ def validate_media_metadata(attachment, metadata):
         except (TypeError, ValueError) as error:
             raise MetaMediaError("Obtención de medio rechazada: Meta devolvió un tamaño de archivo inválido.") from error
 
-        if file_size > settings.Dialoqo_META_MEDIA_MAX_SIZE:
+        if file_size > settings.DIALOQO_META_MEDIA_MAX_SIZE:
             raise MetaMediaError("Obtención de medio rechazada: el archivo excede el tamaño máximo permitido.")
 
 
@@ -224,7 +224,7 @@ def store_media_attachment(attachment):
         - Permanent Meta media URLs are never persisted.
     """
 
-    locked_attachment = MediaAttachment.objects.select_for_update().select_related("message__conversation__whatsapp_number__whatsapp_business_account__meta_integration").get(id=attachment.id)
+    locked_attachment = MediaAttachment.objects.select_for_update().select_related("message__conversation__whatsapp_number__whatsapp_business_account").get(id=attachment.id)
 
     if locked_attachment.is_stored and locked_attachment.storage_key and private_whatsapp_media_storage.exists(locked_attachment.storage_key):
         return locked_attachment
@@ -234,17 +234,15 @@ def store_media_attachment(attachment):
     locked_attachment.storage_failed_at = None
     locked_attachment.save(update_fields=["retrieval_attempts", "storage_error", "storage_failed_at", "updated_at"])
 
-    integration = locked_attachment.message.conversation.whatsapp_number.whatsapp_business_account.meta_integration
-
     try:
-        credentials = get_meta_credentials(integration.credential_reference)
+        credentials = get_meta_credentials()
         metadata = get_meta_media_metadata(meta_media_id=locked_attachment.meta_media_id, access_token=credentials["access_token"])
         validate_media_metadata(attachment=locked_attachment, metadata=metadata)
 
         temporary_file, size, checksum = download_meta_media(
             media_url=metadata["url"],
             access_token=credentials["access_token"],
-            maximum_size=settings.Dialoqo_META_MEDIA_MAX_SIZE,
+            maximum_size=settings.DIALOQO_META_MEDIA_MAX_SIZE,
         )
 
         try:
