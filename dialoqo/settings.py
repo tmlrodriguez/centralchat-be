@@ -69,7 +69,7 @@ MIDDLEWARE = [
 ]
 
 
-ROOT_URLCONF = "centralchat.urls"
+ROOT_URLCONF = "dialoqo.urls"
 
 
 TEMPLATES = [
@@ -88,8 +88,8 @@ TEMPLATES = [
 ]
 
 
-WSGI_APPLICATION = "centralchat.wsgi.application"
-ASGI_APPLICATION = "centralchat.asgi.application"
+WSGI_APPLICATION = "dialoqo.wsgi.application"
+ASGI_APPLICATION = "dialoqo.asgi.application"
 
 
 DATABASES = {
