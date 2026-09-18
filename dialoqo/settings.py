@@ -41,6 +41,8 @@ CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", True)
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 
+AUTH_USER_MODEL = "access.AccessUser"
+
 
 INSTALLED_APPS = [
     "daphne",
@@ -54,6 +56,11 @@ INSTALLED_APPS = [
     "corsheaders",
     "channels",
     "storages",
+    "access",
+    "auditing",
+    "members",
+    "organizations",
+    "whatsapp"
 ]
 
 
