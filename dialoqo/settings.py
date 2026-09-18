@@ -10,212 +10,213 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 import os
-import tempfile
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+from dotenv import load_dotenv
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-def get_environment_boolean(name, default=False):
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in ["true", "1", "yes", "on"]
-
-def get_environment_list(name, default=None):
-    value = os.environ.get(name)
-    if value is None:
-        return default or []
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
-DEBUG = get_environment_boolean("DJANGO_DEBUG", default=False)
-ALLOWED_HOSTS = get_environment_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
-
-if DEBUG:
-    ALLOWED_HOSTS.append(".trycloudflare.com")
-
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = ['http://localhost:5173']
-CSRF_TRUSTED_ORIGINS = ["https://*.trycloudflare.com"]
+load_dotenv(BASE_DIR / ".env")
 
 
-# Application definition
+def env_bool(name, default=False):
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name, default):
+    return int(os.getenv(name, str(default)))
+
+
+def env_list(name, default=""):
+    return [value.strip() for value in os.getenv(name, default).split(",") if value.strip()]
+
+
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+DEBUG = env_bool("DJANGO_DEBUG", False)
+
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
+
+CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", True)
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+
 
 INSTALLED_APPS = [
-    'daphne',
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    "daphne",
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     "rest_framework",
-    "rest_framework.authtoken",
     "corsheaders",
     "channels",
     "storages",
-    'common',
-    'access',
-    'organizations',
-    'members',
-    'whatsapp',
-    'auditing'
 ]
+
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
+    "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    "auditing.middleware.AuditRequestContextMiddleware",
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'dialoqo.urls'
+
+ROOT_URLCONF = "centralchat.urls"
+
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'dialoqo.wsgi.application'
-ASGI_APPLICATION = 'dialoqo.asgi.application'
 
-# Database
-# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+WSGI_APPLICATION = "centralchat.wsgi.application"
+ASGI_APPLICATION = "centralchat.asgi.application"
+
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("DB_NAME"),
-        "USER": os.environ.get("DB_USER"),
-        "PASSWORD": os.environ.get("DB_PASSWORD"),
-        "HOST": os.environ.get("DB_HOST"),
-        "PORT": os.environ.get("DB_PORT"),
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 60),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 
-# Password validation
-# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
-AUTH_USER_MODEL = "access.AccessUser"
 
-
-# Internationalization
-# https://docs.djangoproject.com/en/6.1/topics/i18n/
-
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = "UTC"
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = os.getenv("DJANGO_TIME_ZONE", "UTC")
 USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.1/howto/static-files/
-
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
 MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+    "default": {
+        "BACKEND": os.getenv(
+            "DJANGO_MAIL_BACKEND",
+            "django.core.mail.backends.console.EmailBackend",
+        ),
     },
 }
 
-# Celery + Redis
 
-REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
-REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = env_int("REDIS_PORT", 6379)
 
-REDIS_CHANNEL_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
-REDIS_CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
-REDIS_CELERY_RESULT_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/2"
+REDIS_URL = os.getenv(
+    "REDIS_URL",
+    f"redis://{REDIS_HOST}:{REDIS_PORT}/0",
+)
+
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [
-                REDIS_CHANNEL_URL,
-            ],
+            "hosts": [REDIS_URL],
         },
     },
 }
 
-CELERY_BROKER_URL = REDIS_CELERY_BROKER_URL
-CELERY_RESULT_BACKEND = REDIS_CELERY_RESULT_URL
+
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
+)
+
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND",
+    f"redis://{REDIS_HOST}:{REDIS_PORT}/2",
+)
 
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
-
 CELERY_TIMEZONE = TIME_ZONE
-CELERY_ENABLE_UTC = True
-
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_ACKS_LATE = True
-CELERY_TASK_REJECT_ON_WORKER_LOST = True
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_TASK_DEFAULT_QUEUE = "default"
-
-CELERY_TASK_ROUTES = {
-    "whatsapp.tasks.process_whatsapp_webhook_task": {
-        "queue": "whatsapp",
-    },
-    "whatsapp.tasks.store_whatsapp_media_attachment_task": {
-        "queue": "whatsapp_media",
-    },
-}
-
-# Private WhatsApp media configuration.
-
-DIALOQO_META_GRAPH_API_VERSION = "v26.0"
-DIALOQO_META_REQUEST_TIMEOUT = 30
-DIALOQO_META_MEDIA_REQUEST_TIMEOUT = 30
 
 
-DIALOQO_PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
-DIALOQO_META_MEDIA_MAX_SIZE = 100 * 1024 * 1024
-DIALOQO_META_MEDIA_MEMORY_THRESHOLD = 5 * 1024 * 1024
-DIALOQO_META_MEDIA_TEMPORARY_FILE_CLASS = tempfile.SpooledTemporaryFile
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+
+
+DIALOQO_META_GRAPH_API_VERSION = os.getenv(
+    "DIALOQO_META_GRAPH_API_VERSION",
+    "v26.0",
+)
+
+DIALOQO_META_REQUEST_TIMEOUT = env_int(
+    "DIALOQO_META_REQUEST_TIMEOUT",
+    30,
+)
+
+DIALOQO_META_MEDIA_REQUEST_TIMEOUT = env_int(
+    "DIALOQO_META_MEDIA_REQUEST_TIMEOUT",
+    30,
+)
+
+DIALOQO_PRIVATE_MEDIA_ROOT = Path(
+    os.getenv(
+        "DIALOQO_PRIVATE_MEDIA_ROOT",
+        str(BASE_DIR / "private_media"),
+    )
+)
+
+DIALOQO_META_MEDIA_MAX_SIZE = env_int(
+    "DIALOQO_META_MEDIA_MAX_SIZE",
+    100 * 1024 * 1024,
+)
+
+DIALOQO_META_MEDIA_MEMORY_THRESHOLD = env_int(
+    "DIALOQO_META_MEDIA_MEMORY_THRESHOLD",
+    5 * 1024 * 1024,
+)
