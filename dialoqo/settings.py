@@ -9,8 +9,10 @@ https://docs.djangoproject.com/en/6.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
+
 import os
 from pathlib import Path
+from tempfile import SpooledTemporaryFile
 
 from dotenv import load_dotenv
 
@@ -61,7 +63,7 @@ INSTALLED_APPS = [
     "auditing",
     "members",
     "organizations",
-    "whatsapp"
+    "whatsapp",
 ]
 
 
@@ -228,3 +230,5 @@ DIALOQO_META_MEDIA_MEMORY_THRESHOLD = env_int(
     "DIALOQO_META_MEDIA_MEMORY_THRESHOLD",
     5 * 1024 * 1024,
 )
+
+DIALOQO_META_MEDIA_TEMPORARY_FILE_CLASS = SpooledTemporaryFile
